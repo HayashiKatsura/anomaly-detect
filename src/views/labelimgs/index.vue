@@ -1,6 +1,5 @@
 <script setup>
 defineOptions({
-  // name 作为一种规范最好必须写上并且和路由的name保持一致
   name: "Labelimgs"
 });
 import { ref, reactive, computed, nextTick, onMounted, onUnmounted } from 'vue'
@@ -36,22 +35,22 @@ const rectangles = computed({
 
 // 图像相关数据（支持标注URL）
 const images = ref([
-  {
-    imageUrl: 'https://zjut-anomalies-source.oss-cn-hangzhou.aliyuncs.com/15210A-Bin-041.png',
-    annotationUrl: 'https://zjut-anomalies-source.oss-cn-hangzhou.aliyuncs.com/15210A-Bin-041.txt' // 可以在这里添加标注URL
-  },
-  {
-    imageUrl: 'https://zjut-anomalies-source.oss-cn-hangzhou.aliyuncs.com/15260A-F1-Bin-001.png',
-    annotationUrl: null
-  },
-  {
-    imageUrl: 'https://zjut-anomalies-source.oss-cn-hangzhou.aliyuncs.com/15260A-F1-Bin-005.png',
-    annotationUrl: null
-  },
-  {
-    imageUrl: 'https://zjut-anomalies-source.oss-cn-hangzhou.aliyuncs.com/15260A-F1-Bin-006.png',
-    annotationUrl: null
-  }
+  // {
+  //   imageUrl: 'https://zjut-anomalies-source.oss-cn-hangzhou.aliyuncs.com/15210A-Bin-041.png',
+  //   annotationUrl: 'https://zjut-anomalies-source.oss-cn-hangzhou.aliyuncs.com/15210A-Bin-041.txt' // 可以在这里添加标注URL
+  // },
+  // {
+  //   imageUrl: 'https://zjut-anomalies-source.oss-cn-hangzhou.aliyuncs.com/15260A-F1-Bin-001.png',
+  //   annotationUrl: null
+  // },
+  // {
+  //   imageUrl: 'https://zjut-anomalies-source.oss-cn-hangzhou.aliyuncs.com/15260A-F1-Bin-005.png',
+  //   annotationUrl: null
+  // },
+  // {
+  //   imageUrl: 'https://zjut-anomalies-source.oss-cn-hangzhou.aliyuncs.com/15260A-F1-Bin-006.png',
+  //   annotationUrl: null
+  // }
 ])
 
 const currentImageIndex = ref(0)
