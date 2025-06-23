@@ -35,10 +35,10 @@ const rectangles = computed({
 
 // 图像相关数据（支持标注URL）
 const images = ref([
-  // {
-  //   imageUrl: 'https://zjut-anomalies-source.oss-cn-hangzhou.aliyuncs.com/15210A-Bin-041.png',
-  //   annotationUrl: 'https://zjut-anomalies-source.oss-cn-hangzhou.aliyuncs.com/15210A-Bin-041.txt' // 可以在这里添加标注URL
-  // },
+  {
+    imageUrl: 'https://zjut-anomalies-source.oss-cn-hangzhou.aliyuncs.com/15210A-Bin-041.png',
+    annotationUrl: 'https://zjut-anomalies-source.oss-cn-hangzhou.aliyuncs.com/15210A-Bin-041.txt' // 可以在这里添加标注URL
+  },
   // {
   //   imageUrl: 'https://zjut-anomalies-source.oss-cn-hangzhou.aliyuncs.com/15260A-F1-Bin-001.png',
   //   annotationUrl: null
@@ -470,7 +470,7 @@ const getClassName = (classId) => {
 
 <template>
   <!-- <div class="h-screen flex bg-gray-100"> -->
-  <div class="h-full flex bg-gray-100">
+  <div class="flex bg-gray-100 absolute w-full">
     <!-- 左侧功能区 (10%) -->
     <div class="w-[10%] bg-gray-200 border-r border-gray-300 flex flex-col">
       <div class="p-2 border-b border-gray-300">
@@ -487,9 +487,6 @@ const getClassName = (classId) => {
           </div>
         </div>
       </div>
-      <!-- <div class="p-2 border-t border-gray-300">
-        <div class="text-xs text-gray-500 text-center">{{ zoom }}%</div>
-      </div> -->
     </div>
 
     <!-- 中间图像渲染区 (70%) -->

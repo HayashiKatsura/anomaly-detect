@@ -11,6 +11,10 @@
           <span class="indicator"></span>
           监控: {{ monitoringActive ? '活跃' : '停止' }}
         </div>
+        <div class="status-item" v-if="hasActiveTraining">
+          <span class="indicator training"></span>
+          训练: {{ getTrainingStatusText() }}
+        </div>
       </div>
     </div>
 
@@ -28,16 +32,18 @@
         </div>
         <div class="form-group">
           <label>模型配置文件:</label>
-          <!-- <input type="text" v-model="config.config_yaml_path" placeholder="yolov8n.pt 或模型配置文件路径" required> -->
           <select v-model="config.config_yaml_path">
-            <option value="/Users/katsura/Documents/code/ultralytics/ultralytics/cfg/models/v8/yolov8.yaml">yolov8.yaml</option>
+            <option value="/home/panxiang/coding/kweilx/ultralytics/ultralytics/cfg/models/sussess/yolo12.yaml">yolov12.yaml</option>
+            <option value="yolov8n.pt">yolov8n.pt (预训练)</option>
+            <option value="yolov8s.pt">yolov8s.pt (预训练)</option>
+            <option value="yolov8m.pt">yolov8m.pt (预训练)</option>
           </select>
         </div>
         <div class="form-group">
           <label>数据配置文件:</label>
-          <!-- <input type="text" v-model="config.data_yaml" placeholder="path/to/dataset.yaml" required> -->
           <select v-model="config.data_yaml">
-            <option value="/Users/katsura/Documents/code/ultralytics/dataset/mydata.yaml">mydata.yaml</option>
+            <option value="/home/panxiang/coding/kweilx/ultralytics/_project/mydata/_a_datasets/multi_class/damage_131/mydata.yaml">mydata.yaml</option>
+            <option value="">请选择数据配置文件...</option>
           </select>
         </div>
         <div class="form-group">
@@ -66,7 +72,11 @@
         <!-- 设备和其他设置 -->
         <div class="form-group">
           <label>设备:</label>
-          <input type="text" v-model="config.device" placeholder="0 (GPU) 或 cpu">
+          <select v-model="config.device">
+            <option value="cpu">CPU</option>
+            <option value="0">GPU 0</option>
+            <option value="1">GPU 1</option>
+          </select>
         </div>
         <div class="form-group">
           <label>冻结层数:</label>
@@ -91,50 +101,114 @@
     <div class="control-section">
       <button
         @click="startTraining"
-        :disabled="!apiConnected || hasActiveTraining || !isConfigValid"
+        :disabled="!apiConnected || hasActiveTraining || !isConfigValid || isOperationInProgress"
         class="btn btn-start"
       >
-        {{ hasActiveTraining ? '训练进行中...' : '🚀 开始训练' }}
+        {{ hasActiveTraining ? '训练进行中...' : isOperationInProgress ? '启动中...' : '🚀 开始训练' }}
       </button>
 
       <button
         @click="stopTraining"
-        :disabled="!apiConnected || !currentSessionId"
+        :disabled="!apiConnected || !currentSessionId || isOperationInProgress"
         class="btn btn-stop"
       >
-        ⏹️ 停止训练
+        {{ isOperationInProgress ? '停止中...' : '⏹️ 停止训练' }}
       </button>
 
-      <button @click="refreshStatus" class="btn btn-secondary">
+      <button @click="refreshStatus" class="btn btn-secondary" :disabled="isOperationInProgress">
         🔄 刷新状态
       </button>
 
-      <button @click="debugSession" :disabled="!currentSessionId" class="btn btn-info">
+      <button @click="debugSession" :disabled="!currentSessionId || isOperationInProgress" class="btn btn-info">
         🔍 调试信息
       </button>
 
-      <button @click="forceCsvScan" :disabled="!currentSessionId" class="btn btn-warning">
+      <button @click="forceCsvScan" :disabled="!currentSessionId || isOperationInProgress" class="btn btn-warning">
         📁 重新扫描CSV
       </button>
+
+      <!-- 手动压缩按钮 -->
+      <button
+        @click="zipTrainingResults"
+        :disabled="!currentSessionId || isOperationInProgress || !isTrainingCompleted"
+        class="btn btn-package"
+      >
+        📦 压缩结果
+      </button>
+
+      <button @click="resetTraining" :disabled="isOperationInProgress" class="btn btn-danger">
+        🔄 重置
+      </button>
+    </div>
+
+    <!-- 连接检测提示 -->
+    <div v-if="!apiConnected" class="connection-warning">
+      <div class="warning-content">
+        <h4>⚠️ API连接失败</h4>
+        <p>无法连接到训练服务器 (http://10.12.44.68:5130)</p>
+        <p>请确认：</p>
+        <ul>
+          <li>后端服务器是否已启动</li>
+          <li>端口5130是否可访问</li>
+          <li>防火墙是否阻止连接</li>
+        </ul>
+        <button @click="checkApiConnection" class="btn btn-small btn-info">🔄 重新连接</button>
+      </div>
     </div>
 
     <!-- 训练状态 -->
     <div class="training-status" v-if="hasActiveTraining">
       <h3>训练状态 - {{ currentSessionId }}</h3>
 
-      <!-- 如果没有数据，显示提示 -->
-      <div v-if="!currentTrainingData" class="no-data-warning">
+      <!-- 训练生命周期指示器 -->
+      <div class="lifecycle-indicator">
+        <div class="lifecycle-step" :class="{ active: trainingPhase >= 1, completed: trainingPhase > 1 }">
+          <span class="step-number">1</span>
+          <span class="step-text">训练启动</span>
+        </div>
+        <div class="lifecycle-step" :class="{ active: trainingPhase >= 2, completed: trainingPhase > 2 }">
+          <span class="step-number">2</span>
+          <span class="step-text">数据加载</span>
+        </div>
+        <div class="lifecycle-step" :class="{ active: trainingPhase >= 3, completed: trainingPhase > 3 }">
+          <span class="step-number">3</span>
+          <span class="step-text">模型训练</span>
+        </div>
+        <div class="lifecycle-step" :class="{ active: trainingPhase >= 4 }">
+          <span class="step-number">4</span>
+          <span class="step-text">训练完成</span>
+        </div>
+      </div>
+
+      <!-- 调试信息显示 -->
+      <div v-if="debugInfo && showDebugInfo" class="debug-info">
+        <h4>🔍 调试信息</h4>
+        <div class="debug-details">
+          <p><strong>会话存在:</strong> {{ debugInfo.session_exists ? '是' : '否' }}</p>
+          <p><strong>CSV路径:</strong> {{ debugInfo.csv_path || '未找到' }}</p>
+          <p><strong>状态:</strong> {{ debugInfo.status || '未知' }}</p>
+          <p><strong>连续失败次数:</strong> {{ consecutiveFailures }}</p>
+          <p><strong>最后更新:</strong> {{ lastProgressUpdate ? formatTime(lastProgressUpdate / 1000) : '无' }}</p>
+        </div>
+      </div>
+
+      <!-- 等待数据提示 -->
+      <div v-if="!currentTrainingData && !isTrainingCompleted" class="no-data-warning">
         <div class="warning-content">
           <h4>⏳ 等待训练数据...</h4>
           <p>训练已启动，但尚未获取到进度数据。这可能是因为：</p>
           <ul>
-            <li>训练刚刚开始，CSV文件还未生成</li>
+            <li>训练刚刚开始，CSV文件还未生成 ({{ waitingTime }}秒)</li>
             <li>第一个epoch还未完成</li>
             <li>文件路径检测问题</li>
           </ul>
+          <div class="waiting-progress">
+            <div class="waiting-bar" :style="{ width: Math.min(100, (waitingTime / 60) * 100) + '%' }"></div>
+          </div>
           <div class="warning-actions">
-            <button @click="debugSession" class="btn btn-small btn-info">🔍 检查状态</button>
-            <button @click="forceCsvScan" class="btn btn-small btn-warning">📁 扫描文件</button>
+            <button @click="debugSession" class="btn btn-small btn-info" :disabled="isOperationInProgress">🔍 检查状态</button>
+            <button @click="forceCsvScan" class="btn btn-small btn-warning" :disabled="isOperationInProgress">📁 扫描文件</button>
+            <button @click="toggleDebugInfo" class="btn btn-small btn-secondary">{{ showDebugInfo ? '隐藏' : '显示' }}调试</button>
           </div>
         </div>
       </div>
@@ -145,10 +219,14 @@
         <div class="progress-section">
           <div class="progress-info">
             <span>Epoch {{ currentTrainingData.epoch }}/{{ currentTrainingData.total_epochs }}</span>
-            <span>{{ progressPercentage.toFixed(1) }}%</span>
+            <span>{{ progressPercentage.toFixed(1) }}% ({{ formatDuration(trainingElapsedTime) }})</span>
           </div>
           <div class="progress-bar">
             <div class="progress-fill" :style="{ width: progressPercentage + '%' }"></div>
+          </div>
+          <div class="progress-details">
+            <span>预计剩余: {{ estimatedTimeRemaining }}</span>
+            <span>更新间隔: {{ timeSinceLastUpdate }}秒前</span>
           </div>
         </div>
 
@@ -159,19 +237,19 @@
             <div class="metrics">
               <div class="metric">
                 <span>Box:</span>
-                <span>{{ currentTrainingData.train_losses.box_loss.toFixed(6) }}</span>
+                <span>{{ formatNumber(currentTrainingData.train_losses.box_loss) }}</span>
               </div>
               <div class="metric">
                 <span>Obj:</span>
-                <span>{{ currentTrainingData.train_losses.obj_loss.toFixed(6) }}</span>
+                <span>{{ formatNumber(currentTrainingData.train_losses.obj_loss) }}</span>
               </div>
               <div class="metric">
                 <span>Cls:</span>
-                <span>{{ currentTrainingData.train_losses.cls_loss.toFixed(6) }}</span>
+                <span>{{ formatNumber(currentTrainingData.train_losses.cls_loss) }}</span>
               </div>
               <div class="metric total">
                 <span>总计:</span>
-                <span>{{ currentTrainingData.train_losses.total_loss.toFixed(6) }}</span>
+                <span>{{ formatNumber(currentTrainingData.train_losses.total_loss) }}</span>
               </div>
             </div>
           </div>
@@ -181,19 +259,19 @@
             <div class="metrics">
               <div class="metric">
                 <span>Box:</span>
-                <span>{{ currentTrainingData.val_losses.box_loss.toFixed(6) }}</span>
+                <span>{{ formatNumber(currentTrainingData.val_losses.box_loss) }}</span>
               </div>
               <div class="metric">
                 <span>Obj:</span>
-                <span>{{ currentTrainingData.val_losses.obj_loss.toFixed(6) }}</span>
+                <span>{{ formatNumber(currentTrainingData.val_losses.obj_loss) }}</span>
               </div>
               <div class="metric">
                 <span>Cls:</span>
-                <span>{{ currentTrainingData.val_losses.cls_loss.toFixed(6) }}</span>
+                <span>{{ formatNumber(currentTrainingData.val_losses.cls_loss) }}</span>
               </div>
               <div class="metric total">
                 <span>总计:</span>
-                <span>{{ currentTrainingData.val_losses.total_loss.toFixed(6) }}</span>
+                <span>{{ formatNumber(currentTrainingData.val_losses.total_loss) }}</span>
               </div>
             </div>
           </div>
@@ -203,19 +281,19 @@
             <div class="metrics">
               <div class="metric">
                 <span>Precision:</span>
-                <span>{{ (currentTrainingData.metrics.precision * 100).toFixed(2) }}%</span>
+                <span>{{ formatPercentage(currentTrainingData.metrics.precision) }}</span>
               </div>
               <div class="metric">
                 <span>Recall:</span>
-                <span>{{ (currentTrainingData.metrics.recall * 100).toFixed(2) }}%</span>
+                <span>{{ formatPercentage(currentTrainingData.metrics.recall) }}</span>
               </div>
               <div class="metric highlight">
                 <span>mAP@0.5:</span>
-                <span>{{ (currentTrainingData.metrics.mAP50 * 100).toFixed(2) }}%</span>
+                <span>{{ formatPercentage(currentTrainingData.metrics.mAP50) }}</span>
               </div>
               <div class="metric highlight">
                 <span>mAP@0.5:0.95:</span>
-                <span>{{ (currentTrainingData.metrics.mAP50_95 * 100).toFixed(2) }}%</span>
+                <span>{{ formatPercentage(currentTrainingData.metrics.mAP50_95) }}</span>
               </div>
             </div>
           </div>
@@ -225,17 +303,41 @@
             <div class="metrics">
               <div class="metric">
                 <span>学习率:</span>
-                <span>{{ currentTrainingData.learning_rate.toFixed(6) }}</span>
+                <span>{{ formatNumber(currentTrainingData.learning_rate, 6) }}</span>
               </div>
               <div class="metric">
                 <span>运行时间:</span>
-                <span>{{ formatDuration(currentTrainingData.timestamp - sessionStartTime) }}</span>
+                <span>{{ formatDuration(trainingElapsedTime) }}</span>
               </div>
               <div class="metric">
                 <span>最后更新:</span>
                 <span>{{ formatTime(currentTrainingData.timestamp) }}</span>
               </div>
+              <div class="metric">
+                <span>监控状态:</span>
+                <span :class="{ 'text-success': isProgressHealthy, 'text-danger': !isProgressHealthy }">
+                  {{ isProgressHealthy ? '正常' : '异常' }}
+                </span>
+              </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 训练完成状态 -->
+      <div v-if="isTrainingCompleted" class="completion-status">
+        <div class="completion-content">
+          <h4>✅ 训练已完成</h4>
+          <p>训练会话 {{ currentSessionId }} 已成功完成</p>
+          <div class="completion-info">
+            <p>🗜️ 训练结果已自动打包压缩</p>
+            <p>📦 可以手动点击"压缩结果"按钮重新打包</p>
+          </div>
+          <div class="completion-actions">
+            <button @click="zipTrainingResults" class="btn btn-package" :disabled="isOperationInProgress">
+              📦 重新压缩
+            </button>
+            <button @click="resetTraining" class="btn btn-secondary">🔄 开始新的训练</button>
           </div>
         </div>
       </div>
@@ -243,7 +345,13 @@
 
     <!-- 日志区域 -->
     <div class="log-section">
-      <h3>操作日志</h3>
+      <div class="log-header">
+        <h3>操作日志</h3>
+        <div class="log-controls">
+          <button @click="clearLogs" class="btn btn-small btn-secondary">🗑️ 清空</button>
+          <button @click="exportLogs" class="btn btn-small btn-info">💾 导出</button>
+        </div>
+      </div>
       <div class="log-container" ref="logContainer">
         <div
           v-for="(log, index) in logs"
@@ -253,6 +361,9 @@
         >
           <span class="log-time">{{ formatLogTime(log.timestamp) }}</span>
           <span class="log-message">{{ log.message }}</span>
+        </div>
+        <div v-if="logs.length === 0" class="log-empty">
+          暂无日志记录
         </div>
       </div>
     </div>
@@ -264,10 +375,10 @@ defineOptions({
   name: "YoloTrain"
 });
 
-import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 
 // API配置
-const API_BASE = 'http://localhost:5130/api'
+const API_BASE = 'http://10.12.44.68:5130/api'
 
 // 响应式数据
 const apiConnected = ref(false)
@@ -277,16 +388,26 @@ const currentTrainingData = ref(null)
 const sessionStartTime = ref(null)
 const logs = ref([])
 const logContainer = ref(null)
+const isOperationInProgress = ref(false)
+const lastProgressUpdate = ref(null)
+const trainingPhase = ref(0) // 训练阶段：1=启动, 2=数据加载, 3=训练中, 4=完成
+const waitingTime = ref(0)
+const consecutiveFailures = ref(0)
+const maxConsecutiveFailures = 50
+const debugInfo = ref(null)
+const showDebugInfo = ref(false)
 
 // 定时器
 let statusCheckInterval = null
 let progressCheckInterval = null
+let waitingTimer = null
+let connectionCheckInterval = null
 
 // 训练配置
 const config = reactive({
   // 必需参数
-  config_yaml_path: 'yolov8n.pt',  // 模型配置文件路径
-  data_yaml: '',                   // 数据配置文件路径
+  config_yaml_path: '/Users/katsura/Documents/code/ultralytics/ultralytics/cfg/models/v8/yolov8.yaml',
+  data_yaml: '/Users/katsura/Documents/code/ultralytics/dataset/mydata.yaml',
 
   // 可选参数
   weight_path: '',                 // 预训练权重路径
@@ -297,7 +418,7 @@ const config = reactive({
   epochs: 100,                     // 训练轮数
   image_size: 640,                 // 图片尺寸
   learning_rate: 0.01,             // 学习率
-  device: 0,                       // 设备
+  device: 'cpu',                   // 设备
   freeze: null,                    // 冻结层数
   rtd_yolo: 'yolo'                 // 模型类型
 })
@@ -308,100 +429,263 @@ const isConfigValid = computed(() => config.data_yaml && config.config_yaml_path
 const progressPercentage = computed(() => {
   if (!currentTrainingData.value) return 0
   const { epoch, total_epochs } = currentTrainingData.value
-  return (epoch / total_epochs) * 100
+  return Math.min(100, (epoch / total_epochs) * 100)
+})
+
+const trainingElapsedTime = computed(() => {
+  if (!sessionStartTime.value) return 0
+  return Date.now() / 1000 - sessionStartTime.value
+})
+
+const timeSinceLastUpdate = computed(() => {
+  if (!lastProgressUpdate.value) return 0
+  return Math.floor((Date.now() - lastProgressUpdate.value) / 1000)
+})
+
+const isProgressHealthy = computed(() => {
+  return timeSinceLastUpdate.value < 60 && consecutiveFailures.value < 10
+})
+
+const estimatedTimeRemaining = computed(() => {
+  if (!currentTrainingData.value || !sessionStartTime.value) return 'N/A'
+
+  const { epoch, total_epochs } = currentTrainingData.value
+  const elapsed = trainingElapsedTime.value
+  const avgTimePerEpoch = elapsed / epoch
+  const remainingEpochs = total_epochs - epoch
+
+  return formatDuration(avgTimePerEpoch * remainingEpochs)
+})
+
+const isTrainingCompleted = computed(() => {
+  return trainingPhase.value === 4
+})
+
+// 监听训练数据变化
+watch(currentTrainingData, (newData) => {
+  if (newData) {
+    trainingPhase.value = 3 // 进入训练阶段
+    lastProgressUpdate.value = Date.now()
+    consecutiveFailures.value = 0
+    addLog(`进度更新: Epoch ${newData.epoch}, mAP50: ${(newData.metrics.mAP50 * 100).toFixed(1)}%`, 'success')
+  }
 })
 
 // API方法
 const checkApiConnection = async () => {
   try {
-    const response = await fetch(`${API_BASE}/health`)
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000)
+
+    const response = await fetch(`${API_BASE}/health`, {
+      method: 'GET',
+      signal: controller.signal
+    })
+
+    clearTimeout(timeoutId)
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
     const result = await response.json()
+    const wasConnected = apiConnected.value
     apiConnected.value = result.success
+
+    if (!wasConnected && result.success) {
+      addLog('API连接已恢复', 'success')
+    } else if (wasConnected && !result.success) {
+      addLog('API连接已断开', 'error')
+    }
+
     return result.success
   } catch (error) {
+    const wasConnected = apiConnected.value
     apiConnected.value = false
+
+    if (wasConnected) {
+      addLog(`API连接失败: ${error.message}`, 'error')
+    }
+
     return false
   }
 }
 
 const startTraining = async () => {
   if (!isConfigValid.value) {
-    addLog('请填写数据配置文件和模型配置文件', 'error')
+    addLog('请填写完整的训练配置', 'error')
+    return
+  }
+
+  if (isOperationInProgress.value) {
+    addLog('操作正在进行中，请稍候', 'warning')
     return
   }
 
   try {
+    isOperationInProgress.value = true
+    trainingPhase.value = 1
     addLog('正在启动训练...', 'info')
+
+    // 验证配置
+    const sanitizedConfig = { ...config }
+    if (sanitizedConfig.freeze === null || sanitizedConfig.freeze === '') {
+      delete sanitizedConfig.freeze
+    }
 
     const response = await fetch(`${API_BASE}/training/start`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(config)
+      body: JSON.stringify(sanitizedConfig)
     })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
 
     const result = await response.json()
 
     if (result.success) {
       currentSessionId.value = result.session_id
       sessionStartTime.value = Date.now() / 1000
+      trainingPhase.value = 2
+
       addLog(`训练启动成功，会话ID: ${result.session_id}`, 'success')
+      addLog(`保存目录: ${result.save_dir || '默认目录'}`, 'info')
 
       // 开始监控进度
       startProgressMonitoring()
     } else {
-      addLog(`训练启动失败: ${result.message}`, 'error')
+      throw new Error(result.message || '启动失败')
     }
   } catch (error) {
-    addLog(`API调用失败: ${error.message}`, 'error')
+    addLog(`训练启动失败: ${error.message}`, 'error')
+    trainingPhase.value = 0
+  } finally {
+    isOperationInProgress.value = false
   }
 }
 
 const stopTraining = async () => {
-  if (!currentSessionId.value) return
+  if (!currentSessionId.value || isOperationInProgress.value) return
 
   try {
+    isOperationInProgress.value = true
     addLog('正在停止训练...', 'info')
 
     const response = await fetch(`${API_BASE}/training/stop/${currentSessionId.value}`, {
       method: 'POST'
     })
 
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+
     const result = await response.json()
 
     if (result.success) {
       addLog('训练已停止', 'warning')
-      stopProgressMonitoring()
+
+      // 检查是否自动重置了
+      if (result.auto_reset) {
+        addLog('状态已自动重置', 'info')
+        // 立即执行前端重置
+        resetTrainingState()
+        stopProgressMonitoring()
+      } else {
+        // 如果后端没有自动重置，等待3秒后检查状态
+        setTimeout(async () => {
+          await checkTrainingStatus()
+        }, 3000)
+      }
     } else {
-      addLog(`停止训练失败: ${result.message}`, 'error')
+      throw new Error(result.message || '停止失败')
     }
   } catch (error) {
-    addLog(`API调用失败: ${error.message}`, 'error')
+    addLog(`停止训练失败: ${error.message}`, 'error')
+  } finally {
+    isOperationInProgress.value = false
+  }
+}
+
+// 新增：手动压缩训练结果的方法
+const zipTrainingResults = async () => {
+  if (!currentSessionId.value || isOperationInProgress.value) return
+
+  try {
+    isOperationInProgress.value = true
+    addLog('正在压缩训练结果...', 'info')
+
+    const response = await fetch(`${API_BASE}/training/zip/${currentSessionId.value}`, {
+      method: 'POST'
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+
+    const result = await response.json()
+
+    if (result.success) {
+      addLog(`压缩完成: ${result.zip_path}`, 'success')
+      addLog(`原始目录: ${result.save_dir}`, 'info')
+    } else {
+      throw new Error(result.message || '压缩失败')
+    }
+  } catch (error) {
+    addLog(`压缩失败: ${error.message}`, 'error')
+  } finally {
+    isOperationInProgress.value = false
   }
 }
 
 const refreshStatus = async () => {
+  if (isOperationInProgress.value) return
+
   try {
+    isOperationInProgress.value = true
+    addLog('正在刷新状态...', 'info')
+
     const response = await fetch(`${API_BASE}/training/status`)
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+
     const result = await response.json()
 
     if (result.success && result.data) {
+      let foundActive = false
+
       // 查找活跃的训练会话
       for (const [sessionId, sessionInfo] of Object.entries(result.data)) {
-        if (sessionInfo.status === 'running' || sessionInfo.status === 'starting') {
+        if (['running', 'starting'].includes(sessionInfo.status)) {
           currentSessionId.value = sessionId
           sessionStartTime.value = sessionInfo.start_time
-          addLog(`发现活跃训练会话: ${sessionId}`, 'info')
+          trainingPhase.value = sessionInfo.status === 'running' ? 3 : 2
+          foundActive = true
+
+          addLog(`发现活跃训练会话: ${sessionId} (${sessionInfo.status})`, 'info')
 
           // 开始监控进度
           startProgressMonitoring()
           break
         }
       }
+
+      if (!foundActive) {
+        addLog('没有发现活跃的训练会话', 'info')
+        resetTrainingState()
+      }
+    } else {
+      addLog('获取状态失败', 'warning')
     }
   } catch (error) {
     addLog(`刷新状态失败: ${error.message}`, 'error')
+  } finally {
+    isOperationInProgress.value = false
   }
 }
 
@@ -409,50 +693,84 @@ const checkTrainingProgress = async () => {
   if (!currentSessionId.value) return
 
   try {
-    const response = await fetch(`${API_BASE}/training/progress/${currentSessionId.value}`)
-    const result = await response.json()
+    const [progressResponse, statusResponse] = await Promise.all([
+      fetch(`${API_BASE}/training/progress/${currentSessionId.value}`),
+      fetch(`${API_BASE}/training/status/${currentSessionId.value}`)
+    ])
 
-    if (result.success) {
-      if (result.data) {
-        currentTrainingData.value = result.data
-        // 只在有实际数据时记录
-        console.log(`进度更新: Epoch ${result.data.epoch}, mAP50: ${(result.data.metrics.mAP50 * 100).toFixed(1)}%`)
+    // 处理进度数据
+    if (progressResponse.ok) {
+      const progressResult = await progressResponse.json()
+
+      // 保存调试信息
+      if (progressResult.debug) {
+        debugInfo.value = progressResult.debug
+      }
+
+      if (progressResult.success && progressResult.data) {
+        currentTrainingData.value = progressResult.data
+        lastProgressUpdate.value = Date.now()
+        consecutiveFailures.value = 0
+
+        console.log(`进度更新: Epoch ${progressResult.data.epoch}, mAP50: ${(progressResult.data.metrics.mAP50 * 100).toFixed(1)}%`)
       } else {
-        // 显示调试信息帮助诊断
-        if (result.debug) {
-          console.log('进度调试信息:', result.debug)
-
-          // 如果CSV存在但没有数据，可能需要等待
-          if (result.debug.csv_exists && result.debug.csv_rows === 0) {
-            console.log('CSV文件存在但没有数据，继续等待...')
-          }
-        }
+        consecutiveFailures.value++
+        console.log(`进度获取失败 ${consecutiveFailures.value}/${maxConsecutiveFailures}`)
       }
     } else {
-      console.error('获取进度失败:', result.message)
+      consecutiveFailures.value++
+      console.log(`进度API失败 ${consecutiveFailures.value}/${maxConsecutiveFailures}`)
     }
 
-    // 同时检查训练状态
-    const statusResponse = await fetch(`${API_BASE}/training/status/${currentSessionId.value}`)
-    const statusResult = await statusResponse.json()
+    // 处理状态数据
+    if (statusResponse.ok) {
+      const statusResult = await statusResponse.json()
 
-    if (statusResult.success && statusResult.data) {
-      const status = statusResult.data.status
-      if (status === 'completed') {
-        addLog(`训练完成: ${currentSessionId.value}`, 'success')
-        stopProgressMonitoring()
-      } else if (status === 'error') {
-        addLog(`训练出错: ${currentSessionId.value}`, 'error')
-        stopProgressMonitoring()
-      } else if (status === 'stopped') {
-        addLog(`训练已停止: ${currentSessionId.value}`, 'warning')
-        stopProgressMonitoring()
+      if (statusResult.success && statusResult.data) {
+        const status = statusResult.data.status
+
+        switch (status) {
+          case 'completed':
+            addLog(`训练完成: ${currentSessionId.value}`, 'success')
+            addLog('训练结果已自动打包压缩', 'info')
+            trainingPhase.value = 4
+            stopProgressMonitoring()
+            break
+          case 'error':
+            addLog(`训练出错: ${currentSessionId.value}`, 'error')
+            stopProgressMonitoring()
+            break
+          case 'stopped':
+            addLog(`训练已停止: ${currentSessionId.value}`, 'warning')
+            stopProgressMonitoring()
+            // 如果是停止状态，自动重置
+            setTimeout(() => {
+              resetTrainingState()
+            }, 2000)
+            break
+          case 'running':
+            if (trainingPhase.value < 3) {
+              trainingPhase.value = 3
+            }
+            break
+        }
       }
+    }
+
+    // 健康检查
+    if (consecutiveFailures.value >= maxConsecutiveFailures) {
+      addLog(`连续${maxConsecutiveFailures}次获取进度失败，可能训练已异常终止`, 'error')
+      stopProgressMonitoring()
     }
 
   } catch (error) {
-    // 静默处理错误，避免刷屏
+    consecutiveFailures.value++
     console.error('进度检查失败:', error)
+
+    if (consecutiveFailures.value >= maxConsecutiveFailures) {
+      addLog('进度监控失败次数过多，停止监控', 'error')
+      stopProgressMonitoring()
+    }
   }
 }
 
@@ -460,21 +778,28 @@ const startProgressMonitoring = () => {
   if (progressCheckInterval) return // 避免重复启动
 
   monitoringActive.value = true
+  waitingTime.value = 0
+  consecutiveFailures.value = 0 // 重置失败计数
   addLog('开始监控训练进度...', 'info')
 
   // 立即检查一次
   checkTrainingProgress()
 
-  // 每2秒检查一次进度（比之前更频繁）
-  progressCheckInterval = setInterval(checkTrainingProgress, 2000)
+  // 启动等待计时器
+  waitingTimer = setInterval(() => {
+    waitingTime.value++
+  }, 1000)
 
-  // 10秒后如果还没有数据，主动触发CSV扫描
+  // 每5秒检查一次进度
+  progressCheckInterval = setInterval(checkTrainingProgress, 5000)
+
+  // 如果60秒后还没有数据，自动触发CSV扫描
   setTimeout(() => {
-    if (!currentTrainingData.value && currentSessionId.value) {
-      addLog('10秒后仍无数据，自动触发CSV扫描...', 'warning')
+    if (!currentTrainingData.value && currentSessionId.value && monitoringActive.value) {
+      addLog('60秒后仍无数据，自动触发CSV扫描...', 'warning')
       forceCsvScan()
     }
-  }, 10000)
+  }, 60000)
 }
 
 const stopProgressMonitoring = () => {
@@ -483,67 +808,140 @@ const stopProgressMonitoring = () => {
     progressCheckInterval = null
   }
 
+  if (waitingTimer) {
+    clearInterval(waitingTimer)
+    waitingTimer = null
+  }
+
   monitoringActive.value = false
+
+  if (currentSessionId.value) {
+    addLog('停止监控训练进度', 'info')
+  }
+}
+
+const resetTraining = () => {
+  stopProgressMonitoring()
+  resetTrainingState()
+  addLog('训练状态已重置', 'info')
+}
+
+const resetTrainingState = () => {
   currentSessionId.value = null
   currentTrainingData.value = null
-  addLog('停止监控训练进度', 'info')
+  sessionStartTime.value = null
+  lastProgressUpdate.value = null
+  trainingPhase.value = 0
+  waitingTime.value = 0
+  consecutiveFailures.value = 0
+  debugInfo.value = null
+  showDebugInfo.value = false
 }
 
 const debugSession = async () => {
-  if (!currentSessionId.value) return
+  if (!currentSessionId.value || isOperationInProgress.value) return
 
   try {
+    isOperationInProgress.value = true
     const response = await fetch(`${API_BASE}/debug/${currentSessionId.value}`)
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+
     const result = await response.json()
 
     if (result.success) {
       console.log('调试信息:', result.debug_data)
+      debugInfo.value = result.debug_data
+      showDebugInfo.value = true
 
-      // 显示调试信息到日志
       const debug = result.debug_data
       addLog('=== 调试信息 ===', 'info')
-      addLog(`会话状态: ${debug.session_details?.status}`, 'info')
+      addLog(`会话状态: ${debug.session_details?.status || 'N/A'}`, 'info')
       addLog(`CSV路径: ${debug.session_details?.csv_path || '未设置'}`, 'info')
       addLog(`CSV存在: ${debug.csv_info?.exists || false}`, 'info')
       addLog(`CSV行数: ${debug.csv_content?.rows || 0}`, 'info')
       addLog(`保存目录: ${debug.session_details?.save_dir || '未设置'}`, 'info')
 
       if (debug.csv_content && debug.csv_content.last_few_rows?.length > 0) {
-        addLog(`最新数据: Epoch ${debug.csv_content.last_few_rows[debug.csv_content.last_few_rows.length - 1].epoch || 'N/A'}`, 'info')
+        const lastRow = debug.csv_content.last_few_rows[debug.csv_content.last_few_rows.length - 1]
+        addLog(`最新数据: Epoch ${lastRow.epoch || 'N/A'}`, 'info')
       }
-
     } else {
-      addLog(`调试失败: ${result.error}`, 'error')
+      throw new Error(result.error || '调试失败')
     }
   } catch (error) {
-    addLog(`调试API调用失败: ${error.message}`, 'error')
+    addLog(`调试失败: ${error.message}`, 'error')
+  } finally {
+    isOperationInProgress.value = false
   }
 }
 
 const forceCsvScan = async () => {
-  if (!currentSessionId.value) return
+  if (!currentSessionId.value || isOperationInProgress.value) return
 
   try {
+    isOperationInProgress.value = true
     addLog('重新扫描CSV文件...', 'info')
 
     const response = await fetch(`${API_BASE}/force_csv_scan/${currentSessionId.value}`, {
       method: 'POST'
     })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+
     const result = await response.json()
 
     if (result.success) {
       addLog(`CSV扫描成功: ${result.csv_path || '未找到'}`, 'success')
 
-      // 立即检查进度
+      // 2秒后检查进度
       setTimeout(() => {
         checkTrainingProgress()
       }, 2000)
     } else {
-      addLog(`CSV扫描失败: ${result.message}`, 'error')
+      throw new Error(result.message || '扫描失败')
     }
   } catch (error) {
-    addLog(`CSV扫描API调用失败: ${error.message}`, 'error')
+    addLog(`CSV扫描失败: ${error.message}`, 'error')
+  } finally {
+    isOperationInProgress.value = false
   }
+}
+
+const checkTrainingStatus = async () => {
+  if (!currentSessionId.value) return
+
+  try {
+    const response = await fetch(`${API_BASE}/training/status/${currentSessionId.value}`)
+
+    if (response.ok) {
+      const result = await response.json()
+
+      if (result.success && result.data) {
+        const status = result.data.status
+
+        if (['completed', 'error', 'stopped'].includes(status)) {
+          addLog(`训练状态已更新: ${status}`, status === 'completed' ? 'success' : 'warning')
+
+          if (status === 'completed') {
+            trainingPhase.value = 4
+          }
+
+          stopProgressMonitoring()
+        }
+      }
+    }
+  } catch (error) {
+    console.error('检查训练状态失败:', error)
+  }
+}
+
+const toggleDebugInfo = () => {
+  showDebugInfo.value = !showDebugInfo.value
 }
 
 // 工具方法
@@ -567,6 +965,29 @@ const addLog = (message, type = 'info') => {
   })
 }
 
+const clearLogs = () => {
+  logs.value = []
+  addLog('日志已清空', 'info')
+}
+
+const exportLogs = () => {
+  const logText = logs.value.map(log =>
+    `[${formatLogTime(log.timestamp)}] ${log.type.toUpperCase()}: ${log.message}`
+  ).join('\n')
+
+  const blob = new Blob([logText], { type: 'text/plain' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `yolo_training_logs_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+
+  addLog('日志已导出', 'success')
+}
+
 const formatTime = (timestamp) => {
   return new Date(timestamp * 1000).toLocaleTimeString()
 }
@@ -576,10 +997,37 @@ const formatLogTime = (timestamp) => {
 }
 
 const formatDuration = (seconds) => {
+  if (seconds < 60) return `${Math.floor(seconds)}秒`
+
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
   const secs = Math.floor(seconds % 60)
-  return `${hours}h ${minutes}m ${secs}s`
+
+  if (hours > 0) {
+    return `${hours}小时${minutes}分钟${secs}秒`
+  } else {
+    return `${minutes}分钟${secs}秒`
+  }
+}
+
+const formatNumber = (num, decimals = 6) => {
+  if (typeof num !== 'number') return 'N/A'
+  return num.toFixed(decimals)
+}
+
+const formatPercentage = (num) => {
+  if (typeof num !== 'number') return 'N/A'
+  return (num * 100).toFixed(2) + '%'
+}
+
+const getTrainingStatusText = () => {
+  switch (trainingPhase.value) {
+    case 1: return '启动中'
+    case 2: return '加载数据'
+    case 3: return '训练中'
+    case 4: return '已完成'
+    default: return '未知'
+  }
 }
 
 // 定期检查连接状态
@@ -589,6 +1037,8 @@ const checkConnections = async () => {
 
 // 生命周期
 onMounted(async () => {
+  addLog('YOLO训练控制器已启动', 'info')
+
   // 检查API连接
   await checkApiConnection()
 
@@ -596,21 +1046,75 @@ onMounted(async () => {
   await refreshStatus()
 
   // 定期检查连接
-  statusCheckInterval = setInterval(checkConnections, 10000) // 每10秒检查一次
+  connectionCheckInterval = setInterval(checkConnections, 15000)
 })
 
 onUnmounted(() => {
   // 清理定时器
-  if (statusCheckInterval) {
-    clearInterval(statusCheckInterval)
+  if (connectionCheckInterval) {
+    clearInterval(connectionCheckInterval)
   }
   if (progressCheckInterval) {
     clearInterval(progressCheckInterval)
   }
+  if (waitingTimer) {
+    clearInterval(waitingTimer)
+  }
+
+  addLog('YOLO训练控制器已关闭', 'info')
 })
 </script>
 
 <style scoped>
+/* 调试信息样式 */
+.debug-info {
+  background: #e3f2fd;
+  border: 1px solid #90caf9;
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 20px;
+}
+
+.debug-info h4 {
+  margin: 0 0 10px 0;
+  color: #1565c0;
+}
+
+.debug-details {
+  font-size: 13px;
+  color: #1976d2;
+}
+
+.debug-details p {
+  margin: 5px 0;
+}
+
+/* 完成状态信息样式 */
+.completion-info {
+  background: #e8f5e8;
+  border: 1px solid #c3e6cb;
+  border-radius: 8px;
+  padding: 15px;
+  margin: 15px 0;
+}
+
+.completion-info p {
+  margin: 5px 0;
+  color: #155724;
+  font-size: 14px;
+}
+
+/* 新增按钮样式 */
+.btn-package {
+  background-color: #6f42c1;
+  color: white;
+}
+
+.btn-package:hover:not(:disabled) {
+  background-color: #5a32a3;
+}
+
+/* 原有样式 */
 .yolo-simple-controller {
   max-width: 1200px;
   margin: 0 auto;
@@ -671,6 +1175,203 @@ onUnmounted(() => {
   background-color: #28a745;
 }
 
+.indicator.training {
+  background-color: #007bff;
+  animation: pulse 2s infinite;
+}
+
+.connection-warning {
+  background: #f8d7da;
+  border: 1px solid #f5c6cb;
+  border-radius: 10px;
+  padding: 25px;
+  margin-bottom: 25px;
+  width: 100%;
+  max-width: 1000px;
+  border-left: 5px solid #dc3545;
+}
+
+.connection-warning .warning-content h4 {
+  margin: 0 0 15px 0;
+  color: #721c24;
+  font-size: 18px;
+}
+
+.connection-warning .warning-content p {
+  color: #721c24;
+  margin-bottom: 10px;
+}
+
+.connection-warning .warning-content ul {
+  color: #721c24;
+  margin: 10px 0 20px 20px;
+}
+
+.lifecycle-indicator {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 30px;
+  padding: 20px;
+  background: #f8f9fa;
+  border-radius: 10px;
+}
+
+.lifecycle-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  position: relative;
+}
+
+.lifecycle-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 15px;
+  right: -50%;
+  width: 100%;
+  height: 2px;
+  background-color: #dee2e6;
+  z-index: 1;
+}
+
+.lifecycle-step.active:not(:last-child)::after,
+.lifecycle-step.completed:not(:last-child)::after {
+  background-color: #28a745;
+}
+
+.step-number {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background-color: #dee2e6;
+  color: #6c757d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  z-index: 2;
+  position: relative;
+}
+
+.lifecycle-step.active .step-number {
+  background-color: #007bff;
+  color: white;
+}
+
+.lifecycle-step.completed .step-number {
+  background-color: #28a745;
+  color: white;
+}
+
+.step-text {
+  margin-top: 8px;
+  font-size: 12px;
+  text-align: center;
+  color: #6c757d;
+}
+
+.lifecycle-step.active .step-text,
+.lifecycle-step.completed .step-text {
+  color: #333;
+  font-weight: 600;
+}
+
+.waiting-progress {
+  width: 100%;
+  height: 8px;
+  background-color: #e9ecef;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 15px 0;
+}
+
+.waiting-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #ffc107, #fd7e14);
+  transition: width 1s ease;
+  border-radius: 4px;
+}
+
+.progress-details {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #6c757d;
+}
+
+.completion-status {
+  background: #d4edda;
+  border: 1px solid #c3e6cb;
+  border-radius: 10px;
+  padding: 25px;
+  margin-bottom: 25px;
+  border-left: 5px solid #28a745;
+}
+
+.completion-content h4 {
+  margin: 0 0 15px 0;
+  color: #155724;
+  font-size: 18px;
+}
+
+.completion-content p {
+  color: #155724;
+  margin-bottom: 20px;
+}
+
+.completion-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.log-controls {
+  display: flex;
+  gap: 10px;
+}
+
+.log-empty {
+  color: #6c757d;
+  text-align: center;
+  font-style: italic;
+  padding: 20px;
+}
+
+.text-success {
+  color: #28a745 !important;
+}
+
+.text-danger {
+  color: #dc3545 !important;
+}
+
+.btn-danger {
+  background-color: #dc3545;
+  color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background-color: #c82333;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
 .config-section {
   background: white;
   padding: 30px;
@@ -724,16 +1425,6 @@ onUnmounted(() => {
   outline: none;
   border-color: #007bff;
   box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
-}
-
-.form-group input[type="number"] {
-  -moz-appearance: textfield;
-}
-
-.form-group input[type="number"]::-webkit-outer-spin-button,
-.form-group input[type="number"]::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
 }
 
 .control-section {
@@ -1086,6 +1777,15 @@ onUnmounted(() => {
 
   .status-indicators {
     justify-content: center;
+  }
+
+  .lifecycle-indicator {
+    flex-direction: column;
+    gap: 15px;
+  }
+
+  .lifecycle-step:not(:last-child)::after {
+    display: none;
   }
 }
 
