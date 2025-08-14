@@ -60,7 +60,7 @@ const yamlContent = ref("");
 // 获取表单数据
 const getTableData = () => {
   axios
-    .get(API_URL + "/get_table_data", { responseType: "text" })
+    .get(API_URL + "/show_storage", { responseType: "text" })
     .then(res => {
       try {
         const data = JSON.parse(res.data);
@@ -228,48 +228,6 @@ const submitFilesUpload = () => {
         ElMessage.success("文件上传成功");
         dialogVisible.value = false;
         uploadFileList.value = [];
-        // // 上传成功后，若有图片文件，批量存储图片信息
-        // const uploadedFiles = response.data.data?.uploaded_files || [];
-        // const imageExts = [".png", ".jpg", ".jpeg"];
-        // const imageList = [];
-        // uploadedFiles.forEach(file => {
-        //   if (file.box_data) {
-        //     file.box_data.forEach(item => {
-        //       if (
-        //         item.file_type === "file" &&
-        //         imageExts.some(ext =>
-        //           item.file_real_name.toLowerCase().endsWith(ext)
-        //         )
-        //       ) {
-        //         // 提取 file_id 最后36位（UUID），去掉"-"，转hashCode，取正整数
-        //         let picId = "";
-        //         if (item.file_id && item.file_id.length >= 36) {
-        //           let uuid = item.file_id.slice(-36);
-        //           let uuidNoDash = uuid.replace(/-/g, "");
-        //           // picId = hashCode(uuidNoDash);
-        //         }
-        //         imageList.push({
-        //           picId: picId,
-        //           picName: item.file_real_name,
-        //           picUrl: item.file_path,
-        //           uploadDate: uploadDate
-        //         });
-        //       }
-        //     });
-        //   }
-        // });
-        // if (imageList.length > 0) {
-        //   axios
-        //     .post("/api/image/saveList", imageList)
-        //     .then(() => {
-        //       // 可选：提示保存成功
-        //     })
-        //     .catch(() => {
-        //       ElMessage.error("图片信息存储失败");
-        //     });
-        // }
-        // // 上传成功后重新加载CSV数据
-        // this.load();
         getTableData();
       } else {
         ElMessage.error(response.data.code + ": " + response.data.msg);
@@ -338,12 +296,7 @@ const previewFile = async file => {
 const deleteFile = async file => {
   // currentFile.value = file;
   try {
-    // const res = await axios.post(API_URL + "/delete_file", {
-    //   file_path: file.file_path
-    // });
-
     const res = await axios.delete(`${API_URL}/delete_file/${file.file_id}`);
-    // console.log("删除成功:", file.file_real_name); // 调试输出
     previewUrl.value = "";
     yamlContent.value = "";
     ElMessage.success("删除成功: " + file.file_real_name);
@@ -357,35 +310,24 @@ const deleteFile = async file => {
 
 // 文件下载
 const downloadFiles = async file => {
+  let file_id = file.file_id;
+  let file_name = file.file_real_name;
   try {
-    let file_path = file.file_path;
-    let save_name = file_path.substring(file_path.lastIndexOf("/") + 1);
-
     await axios
-      .get(API_URL + "/download_file", {
-        responseType: "blob",
-        params: { file_path: file_path }
+      .get(`${API_URL}/download_file/${file_id}`, {
+        responseType: "blob"
+        // params: { file_path: file_path }
       })
       .then(({ data }) => {
         // console.log("download", data.type);
         if (data.type === "application/zip") {
-          save_name += ".zip";
+          file_name += ".zip";
         }
-        downloadByData(data, save_name);
+        downloadByData(data, file_name);
       });
   } catch (error) {
     ElMessage.error("下载失败: " + error.message);
   }
-};
-
-// hashCode 计算函数
-const hashCode = str => {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = (hash << 5) - hash + str.charCodeAt(i);
-    hash |= 0; // 转为32位整数
-  }
-  return Math.abs(hash);
 };
 
 // 计算属性：语法高亮后的内容
@@ -497,8 +439,10 @@ onMounted(() => {
                 <div>
                   <el-table
                     :data="tableData"
+                    row-key="file_folder_id"
                     border
                     stripe
+                    default-expand-all
                     @sort-change="handleSortChange"
                     @row-click="previewFile"
                   >

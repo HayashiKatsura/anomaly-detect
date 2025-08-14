@@ -68,7 +68,7 @@ const detectTableData = ref([]);
 // 获取表单数据
 const getTableData = () => {
   axios
-    .get(API_URL + "/get_table_data", { responseType: "text" })
+    .get(API_URL + "/show_storage", { responseType: "text" })
     .then(res => {
       try {
         const data = JSON.parse(res.data);
@@ -79,10 +79,10 @@ const getTableData = () => {
           return;
         } else {
           allData.value = data.data;
-          // console.log("allData",allData.value);
-          // allData.value = allData.value.filter(item => item.file_comment == "upload_image")
           imagesData.value = allData.value.filter(
-            item => item.file_comment == "upload_image"
+            item =>
+              item.file_comment == "upload_image" ||
+              item.file_comment == "image-folder"
           );
           console.log("imagesData", imagesData.value);
           weightsData.value = allData.value.filter(
@@ -279,6 +279,25 @@ const previewFile = async file => {
   }
 };
 
+// const detectFiles = async file => {
+//   try {
+//     const res = await axios.get(API_URL + "/detect_file", {
+//       params: {
+//         weight_id: modelValue.value,
+//         image_id: file.file_id,
+//         conf: conf.value
+//       }
+//     });
+//     detectTableData.value = res.data.data;
+//     console.log("detectTableData", detectTableData.value);
+//   } catch (error) {
+//     console.error("删除失败:", file.file_path);
+//     ElMessage.error("删除失败: " + error.message);
+//   } finally {
+//     getTableData();
+//   }
+// };
+
 const detectFiles = async file => {
   try {
     const res = await axios.get(API_URL + "/detect_file", {
@@ -288,11 +307,24 @@ const detectFiles = async file => {
         conf: conf.value
       }
     });
-    detectTableData.value = res.data.data;
-    console.log("detectTableData", detectTableData.value);
+
+    // 轮询检查数据
+    const checkData = () => {
+      if (res.data.data && res.data.data.length > 0) {
+        detectTableData.value = res.data.data;
+        if (!String(file.file_id).includes("folder")) {
+          detectUrl.value = res.data.data[0].detect_image_base64;
+        }
+      } else {
+        // 1s后再次检查
+        setTimeout(checkData, 1000);
+      }
+    };
+
+    checkData();
   } catch (error) {
-    console.error("删除失败:", file.file_path);
-    ElMessage.error("删除失败: " + error.message);
+    console.error("检测失败:", error.message);
+    ElMessage.error("检测失败: " + error.message);
   } finally {
     getTableData();
   }
@@ -416,41 +448,6 @@ onMounted(() => {
             >搜索</el-button
           >
         </div>
-
-        <el-dialog v-model="dialogVisible" title="上传文件" width="30%">
-          <el-upload
-            v-model:file-list="uploadFileList"
-            :auto-upload="false"
-            :on-change="handleFileChangeUnified"
-            action="#"
-            class="upload-container"
-            drag
-            multiple
-          >
-            <el-icon class="el-icon--upload">
-              <upload-filled />
-            </el-icon>
-            <div class="el-upload__text">
-              拖拽文件到此处或 <em>点击上传</em>
-            </div>
-            <template #tip>
-              <div class="el-upload__tip">
-                支持上传以下文件类型：.pt、png、jpg、jpeg、zip、rar、7z，总大小不超过100MB。上传时只能选择单一文件类型。
-              </div>
-            </template>
-          </el-upload>
-          <template #footer>
-            <span class="dialog-footer">
-              <el-button @click="dialogVisible = false">取消</el-button>
-              <el-button
-                :loading="uploading"
-                type="primary"
-                @click="submitFilesDetect"
-                >上传文件</el-button
-              >
-            </span>
-          </template>
-        </el-dialog>
       </div>
     </template>
 
@@ -470,8 +467,10 @@ onMounted(() => {
                     <div>
                       <el-table
                         :data="tableData"
+                        row-key="file_folder_id"
                         border
                         stripe
+                        default-expand-all
                         @sort-change="handleSortChange"
                         @row-click="previewFile"
                       >
@@ -543,7 +542,6 @@ onMounted(() => {
                         border
                         stripe
                         @sort-change="handleSortChange"
-                        @row-click="previewFile"
                       >
                         <el-table-column
                           align="center"
