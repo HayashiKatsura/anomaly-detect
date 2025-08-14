@@ -16,8 +16,7 @@ import {
   Upload,
   UploadFilled,
   View,
-  Download,
-  SetUp
+  Download
 } from "@element-plus/icons-vue";
 import {
   downloadByOnlineUrl,
@@ -26,18 +25,18 @@ import {
   downloadByUrl
 } from "@pureadmin/utils";
 defineOptions({
-  name: "FilesDetect"
+  name: "FilesUpload"
 });
 
 const settingLR: ContextProps = reactive({
   minPercent: 20,
-  defaultPercent: 70,
+  defaultPercent: 60,
   split: "vertical"
 });
 
 const settingTB: ContextProps = reactive({
   minPercent: 20,
-  defaultPercent: 50,
+  defaultPercent: 40,
   split: "horizontal"
 });
 
@@ -208,7 +207,7 @@ const handleFileChangeUnified = file => {
 };
 
 // 文件上传
-const submitFilesDetect = () => {
+const submitFilesUpload = () => {
   if (uploadFileList.value.length === 0) {
     ElMessage.warning("请选择要上传的文件");
     return;
@@ -331,25 +330,10 @@ const previewFile = async file => {
     console.warn(`不支持的文件类型: ${fileExt.value}`);
   }
 };
-// const deleteFile = async file => {
-//   currentFile.value = file;
-//   try {
-//     const res = await axios.post(API_URL + "/delete_file", {
-//       file_path: file.file_path
-//     });
-//     console.log("删除成功:", file.file_path); // 调试输出
-//     ElMessage.success("删除成功: " + file.file_path);
-//   } catch (error) {
-//     console.error("删除失败:", file.file_path);
-//     ElMessage.error("删除失败: " + error.message);
-//   } finally {
-//     getTableData();
-//   }
-// };
-
-const detectFiles = async file => {
+const deleteFile = async file => {
+  currentFile.value = file;
   try {
-    const res = await axios.post(API_URL + "/detect_file", {
+    const res = await axios.post(API_URL + "/delete_file", {
       file_path: file.file_path
     });
     console.log("删除成功:", file.file_path); // 调试输出
@@ -407,31 +391,6 @@ const highlightedContent = computed(() => {
   }
 });
 
-const modelOptions = [
-  {
-    value: 'Option1',
-    label: 'Option1',
-  },
-  {
-    value: 'Option2',
-    label: 'Option2',
-  },
-  {
-    value: 'Option3',
-    label: 'Option3',
-  },
-  {
-    value: 'Option4',
-    label: 'Option4',
-  },
-  {
-    value: 'Option5',
-    label: 'Option5',
-  },
-]
-const modelValue = ref(modelOptions[0].value)
-
-
 //挂载完成
 onMounted(() => {
   getTableData();
@@ -443,26 +402,10 @@ onMounted(() => {
     <!-- 表头提示 -->
     <template #header>
       <div class="card-header flex items-center space-x-10">
-        <!-- <div class="action-buttons-container">
+        <div class="action-buttons-container">
           <el-button :icon="Upload" type="primary" @click="dialogVisible = true"
             >上传文件</el-button
           >
-        </div> -->
-        <div>
-          <el-select
-            v-model="modelValue"
-            filterable
-            clearable
-            placeholder="Select"
-            style="width: 240px"
-          >
-            <el-option
-              v-for="item in modelOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
         </div>
 
         <!-- 分页控件 -->
@@ -524,7 +467,7 @@ onMounted(() => {
               <el-button
                 :loading="uploading"
                 type="primary"
-                @click="submitFilesDetect"
+                @click="submitFilesUpload"
                 >上传文件</el-button
               >
             </span>
@@ -538,202 +481,99 @@ onMounted(() => {
         <!-- #paneL 表示指定该组件为左侧面板 -->
         <template #paneL>
           <!-- 自定义右侧面板的内容 -->
-          <splitpane :splitSet="settingTB">
-            <template #paneL>
-              <el-scrollbar>
-                <div class="dv-a">
-                  <!-- 文件数据表格 -->
-                  <div
-                    class="flex flex-col relative justify-center align-center"
+          <el-scrollbar>
+            <div class="dv-a">
+              <!-- 文件数据表格 -->
+              <div class="flex flex-col relative justify-center align-center">
+                <div>
+                  <el-table
+                    :data="tableData"
+                    border
+                    stripe
+                    @sort-change="handleSortChange"
+                    @row-click="previewFile"
                   >
-                    <div>
-                      <el-table
-                        :data="tableData"
-                        border
-                        stripe
-                        @sort-change="handleSortChange"
-                        @row-click="previewFile"
-                      >
-                        <!--                    <el-table-column-->
-                        <!--                      label="文件ID"-->
-                        <!--                      fixed-->
-                        <!--                      prop="file_id"-->
-                        <!--                      sortable-->
-                        <!--                      width="320"-->
-                        <!--                    />-->
-                        <el-table-column
-                          align="center"
-                          label="文件名称"
-                          prop="file_real_name"
-                          sortable
-                        />
-                        <!-- <el-table-column
+                    <!--                    <el-table-column-->
+                    <!--                      label="文件ID"-->
+                    <!--                      fixed-->
+                    <!--                      prop="file_id"-->
+                    <!--                      sortable-->
+                    <!--                      width="320"-->
+                    <!--                    />-->
+                    <el-table-column
+                      align="center"
+                      label="文件名称"
+                      prop="file_real_name"
+                      sortable
+                    />
+                    <el-table-column
                       align="center"
                       label="文件类型"
                       prop="file_type"
                       sortable
-                    /> -->
-                        <!--                    <el-table-column-->
-                        <!--                      label="文件路径"-->
-                        <!--                      prop="file_path"-->
-                        <!--                      sortable-->
-                        <!--                    />-->
-                        <!-- <el-table-column
+                    />
+                    <!--                    <el-table-column-->
+                    <!--                      label="文件路径"-->
+                    <!--                      prop="file_path"-->
+                    <!--                      sortable-->
+                    <!--                    />-->
+                    <el-table-column
                       align="center"
                       label="文件描述"
                       prop="file_comment"
                       sortable
-                    /> -->
-                        <el-table-column
-                          align="center"
-                          label="上传时间"
-                          prop="file_create_time"
-                          sortable
-                        />
+                    />
+                    <el-table-column
+                      align="center"
+                      label="上传时间"
+                      prop="file_create_time"
+                      sortable
+                    />
 
-                        <el-table-column
-                          align="center"
-                          label="检测"
-                          prop="is_detected"
-                          sortable
+                    <el-table-column align="center" label="操作">
+                      <template v-slot="scope">
+                        <el-button
+                          v-if="true"
+                          :icon="Delete"
+                          type="default"
+                          @click="deleteFile(scope.row)"
                         />
-
-                        <el-table-column align="center" label="操作">
-                          <template v-slot="scope">
-                            <el-button
-                              v-if="true"
-                              :icon="SetUp"
-                              type="default"
-                              @click="detectFiles(scope.row)"
-                            />
-                            <el-button
-                              v-if="true"
-                              :icon="Download"
-                              type="default"
-                              @click="downloadFiles(scope.row)"
-                            />
-                          </template>
-                        </el-table-column>
-                      </el-table>
-                    </div>
-                  </div>
+                        <el-button
+                          v-if="true"
+                          :icon="Download"
+                          type="default"
+                          @click="downloadFiles(scope.row)"
+                        />
+                      </template>
+                    </el-table-column>
+                  </el-table>
                 </div>
-              </el-scrollbar>
-            </template>
-
-            <template #paneR>
-              <el-scrollbar>
-                <div class="dv-a">
-                  <!-- 检测结果 -->
-                  <div
-                    class="flex flex-col relative justify-center align-center"
-                  >
-                    <div>
-                      <el-table
-                        :data="tableData"
-                        border
-                        stripe
-                        @sort-change="handleSortChange"
-                        @row-click="previewFile"
-                      >
-                        <el-table-column
-                          align="center"
-                          label="类别"
-                          prop="file_real_name"
-                          sortable
-                        />
-                        <el-table-column
-                          align="center"
-                          label="坐标"
-                          prop="file_type"
-                          sortable
-                        />
-                        <el-table-column
-                          label="目标大小"
-                          prop="file_path"
-                          sortable
-                        />
-                        <el-table-column
-                          align="center"
-                          label="置信度"
-                          prop="file_comment"
-                          sortable
-                        />
-                        <el-table-column
-                          align="center"
-                          label="是否正确"
-                          prop="file_create_time"
-                          sortable
-                        />
-
-                        <el-table-column
-                          align="center"
-                          label="检测"
-                          prop="is_detected"
-                          sortable
-                        />
-
-                        <!-- <el-table-column align="center" label="操作">
-                          <template v-slot="scope">
-                            <el-button
-                              v-if="true"
-                              :icon="SetUp"
-                              type="default"
-                              @click="detectFiles(scope.row)"
-                            />
-                            <el-button
-                              v-if="true"
-                              :icon="Download"
-                              type="default"
-                              @click="downloadFiles(scope.row)"
-                            />
-                          </template>
-                        </el-table-column> -->
-                      </el-table>
-                    </div>
-                  </div>
-                </div>
-              </el-scrollbar>
-            </template>
-          </splitpane>
+              </div>
+            </div>
+          </el-scrollbar>
         </template>
 
         <!-- #paneR 表示指定该组件为右侧面板 -->
         <template #paneR>
           <!-- 自定义右侧面板的内容 -->
-          <splitpane :splitSet="settingTB">
-            <template #paneL>
-              <el-scrollbar>
-                <div class="dv-a">
-                  <!--              图像-->
-                  <div v-if="['png', 'jpg', 'jpeg'].includes(fileExt)">
-                    <img
-                      :src="previewUrl"
-                      style="height: 100%; width: auto; object-fit: contain"
-                      alt=""
-                      fit="contain"
-                    />
-                  </div>
-                </div>
-              </el-scrollbar>
-            </template>
-
-            <template #paneR>
-              <el-scrollbar>
-                <div class="dv-a">
-                  <!--              图像-->
-                  <div v-if="['png', 'jpg', 'jpeg'].includes(fileExt)">
-                    <img
-                      :src="previewUrl"
-                      style="height: 100%; width: auto; object-fit: contain"
-                      alt=""
-                      fit="contain"
-                    />
-                  </div>
-                </div>
-              </el-scrollbar>
-            </template>
-          </splitpane>
+          <el-scrollbar>
+            <div class="dv-a">
+              <!--              图像-->
+              <div v-if="['png', 'jpg', 'jpeg'].includes(fileExt)">
+                <img
+                  :src="previewUrl"
+                  style="height: 100%; width: 100%; object-fit: contain"
+                  alt=""
+                  fit="contain"
+                />
+              </div>
+              <!--              yaml-->
+              <div v-else-if="['yaml', 'yml', 'txt'].includes(fileExt)" />
+              <pre>
+                <code class="text-left" v-html="highlightedContent"/>
+              </pre>
+            </div>
+          </el-scrollbar>
         </template>
       </splitpane>
     </div>

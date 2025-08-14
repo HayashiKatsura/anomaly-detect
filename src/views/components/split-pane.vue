@@ -49,11 +49,13 @@ const settingTB: ContextProps = reactive({
             <template #paneL>
               <el-scrollbar><div class="dv-b">B</div></el-scrollbar>
             </template>
+
             <template #paneR>
               <el-scrollbar>
                 <div class="dv-c">C</div>
               </el-scrollbar>
             </template>
+            
           </splitpane>
         </template>
       </splitpane>
