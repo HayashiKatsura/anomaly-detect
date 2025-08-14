@@ -31,7 +31,7 @@ defineOptions({
 
 const settingLR: ContextProps = reactive({
   minPercent: 20,
-  defaultPercent: 70,
+  defaultPercent: 80,
   split: "vertical"
 });
 
@@ -50,13 +50,20 @@ const pageNum = ref(1);
 const filteredData = ref([]);
 const total = ref(0);
 const allData = ref([]);
+
+const imagesData = ref([]);
+const weightsData = ref([]);
+
 const sortProp = ref("");
 const sortOrder = ref("");
 const fileName = ref("");
 const previewUrl = ref("");
+const detectUrl = ref("");
 const currentFile = ref(null);
 const fileExt = ref(null);
 const yamlContent = ref("");
+const conf = ref(0.25);
+const detectTableData = ref([]);
 
 // 获取表单数据
 const getTableData = () => {
@@ -72,12 +79,24 @@ const getTableData = () => {
           return;
         } else {
           allData.value = data.data;
-          // allData.value.forEach(file => {
-          //   // 使用正则替换掉'data'以前的所有字符
-          //   file.file_path = file.file_path.replace(/^.*?data/, 'data');
-          // });
-          console.log(allData.value);
-          console.log(typeof allData.value);
+          // console.log("allData",allData.value);
+          // allData.value = allData.value.filter(item => item.file_comment == "upload_image")
+          imagesData.value = allData.value.filter(
+            item => item.file_comment == "upload_image"
+          );
+          console.log("imagesData", imagesData.value);
+          weightsData.value = allData.value.filter(
+            item => item.file_comment == "upload_weight"
+          );
+          console.log("weightsData", weightsData.value);
+          modelOptions.value = weightsData.value.map(item => ({
+            value: item.file_id,
+            label: item.file_real_name
+          }));
+          if (modelOptions.value.length > 0) {
+            modelValue.value = modelOptions.value[0].value;
+          }
+
           filterAndSortData();
         }
       } catch (error) {
@@ -94,7 +113,8 @@ const getTableData = () => {
 // 过滤和排序数据
 const filterAndSortData = () => {
   // 搜索过滤
-  let filtered = allData.value;
+  // let filtered = allData.value;
+  let filtered = imagesData.value;
   console.log("filtered:", filtered);
   if (fileName.value) {
     const searchTerm = fileName.value.toLowerCase();
@@ -218,8 +238,7 @@ const submitFilesDetect = () => {
   uploadFileList.value.forEach(file => {
     formData.append("files", file.raw);
   });
-  // axios.post(API_URL+'/upload_files', formData, {
-  // axios.post(API_URL + '/images', formData, {
+
   axios
     .post(API_URL + "/upload_file", formData, {
       headers: { "Content-Type": "multipart/form-data" }
@@ -229,48 +248,6 @@ const submitFilesDetect = () => {
         ElMessage.success("文件上传成功");
         dialogVisible.value = false;
         uploadFileList.value = [];
-        // // 上传成功后，若有图片文件，批量存储图片信息
-        // const uploadedFiles = response.data.data?.uploaded_files || [];
-        // const imageExts = [".png", ".jpg", ".jpeg"];
-        // const imageList = [];
-        // uploadedFiles.forEach(file => {
-        //   if (file.box_data) {
-        //     file.box_data.forEach(item => {
-        //       if (
-        //         item.file_type === "file" &&
-        //         imageExts.some(ext =>
-        //           item.file_real_name.toLowerCase().endsWith(ext)
-        //         )
-        //       ) {
-        //         // 提取 file_id 最后36位（UUID），去掉"-"，转hashCode，取正整数
-        //         let picId = "";
-        //         if (item.file_id && item.file_id.length >= 36) {
-        //           let uuid = item.file_id.slice(-36);
-        //           let uuidNoDash = uuid.replace(/-/g, "");
-        //           // picId = hashCode(uuidNoDash);
-        //         }
-        //         imageList.push({
-        //           picId: picId,
-        //           picName: item.file_real_name,
-        //           picUrl: item.file_path,
-        //           uploadDate: uploadDate
-        //         });
-        //       }
-        //     });
-        //   }
-        // });
-        // if (imageList.length > 0) {
-        //   axios
-        //     .post("/api/image/saveList", imageList)
-        //     .then(() => {
-        //       // 可选：提示保存成功
-        //     })
-        //     .catch(() => {
-        //       ElMessage.error("图片信息存储失败");
-        //     });
-        // }
-        // // 上传成功后重新加载CSV数据
-        // this.load();
         getTableData();
       } else {
         ElMessage.error(response.data.code + ": " + response.data.msg);
@@ -290,70 +267,29 @@ const submitFilesDetect = () => {
 
 const previewFile = async file => {
   currentFile.value = file;
-  let file_path = file.file_path;
-  // 获取文件扩展名并转换为小写
-  fileExt.value = file_path.toLowerCase().split(".").pop();
-  console.log("fileExt", fileExt.value);
-
-  // 定义图像文件扩展名
-  const imageExtensions = ["png", "jpg", "jpeg"];
-
-  // 定义文本文件扩展名
-  const textExtensions = ["yaml", "yml", "txt"];
-
-  if (imageExtensions.includes(fileExt.value)) {
-    // 执行读取图像的函数
-    try {
-      const res = await axios.post(API_URL + "/show_image", {
-        file_path: file_path
-      });
-      previewUrl.value = res.data.data.url; // 直接更新响应式变量
-      console.log("预览URL:", previewUrl.value); // 调试输出
-    } catch (error) {
-      console.error("预览失败:", error);
-      ElMessage.error("预览失败: " + error.message);
-    }
-  } else if (textExtensions.includes(fileExt.value)) {
-    // 执行读取文本的函数
-    try {
-      const res = await axios.post(API_URL + "/get_yaml", {
-        file_path: file_path
-      });
-      console.log("txt", res.data.data);
-
-      yamlContent.value = res.data.data; // 直接更新响应式变量
-    } catch (error) {
-      console.error("预览失败:", error);
-      ElMessage.error("预览失败: " + error.message);
-    }
-  } else {
-    // 可选：处理不支持的文件类型
-    console.warn(`不支持的文件类型: ${fileExt.value}`);
+  // 执行读取图像的函数
+  try {
+    const res = await axios.get(`${API_URL}/show_image/${file.file_id}`);
+    previewUrl.value = res.data.data.image_url; // 直接更新响应式变量
+    detectUrl.value = res.data.data.detect_url; // 直接更新响应式变量
+    detectTableData.value = res.data.data.detect_result; // 直接更新响应式变量
+  } catch (error) {
+    console.error("预览失败:", error);
+    ElMessage.error("预览失败: " + error.message);
   }
 };
-// const deleteFile = async file => {
-//   currentFile.value = file;
-//   try {
-//     const res = await axios.post(API_URL + "/delete_file", {
-//       file_path: file.file_path
-//     });
-//     console.log("删除成功:", file.file_path); // 调试输出
-//     ElMessage.success("删除成功: " + file.file_path);
-//   } catch (error) {
-//     console.error("删除失败:", file.file_path);
-//     ElMessage.error("删除失败: " + error.message);
-//   } finally {
-//     getTableData();
-//   }
-// };
 
 const detectFiles = async file => {
   try {
-    const res = await axios.post(API_URL + "/detect_file", {
-      file_path: file.file_path
+    const res = await axios.get(API_URL + "/detect_file", {
+      params: {
+        weight_id: modelValue.value,
+        image_id: file.file_id,
+        conf: conf.value
+      }
     });
-    console.log("删除成功:", file.file_path); // 调试输出
-    ElMessage.success("删除成功: " + file.file_path);
+    detectTableData.value = res.data.data;
+    console.log("detectTableData", detectTableData.value);
   } catch (error) {
     console.error("删除失败:", file.file_path);
     ElMessage.error("删除失败: " + error.message);
@@ -364,6 +300,7 @@ const detectFiles = async file => {
 
 // 文件下载
 const downloadFiles = async file => {
+  console.log("downloadFiles:", file);
   try {
     let file_path = file.file_path;
     let save_name = file_path.substring(file_path.lastIndexOf("/") + 1);
@@ -406,31 +343,8 @@ const highlightedContent = computed(() => {
     return yamlContent.value;
   }
 });
-
-const modelOptions = [
-  {
-    value: 'Option1',
-    label: 'Option1',
-  },
-  {
-    value: 'Option2',
-    label: 'Option2',
-  },
-  {
-    value: 'Option3',
-    label: 'Option3',
-  },
-  {
-    value: 'Option4',
-    label: 'Option4',
-  },
-  {
-    value: 'Option5',
-    label: 'Option5',
-  },
-]
-const modelValue = ref(modelOptions[0].value)
-
+const modelOptions = ref([]);
+const modelValue = ref(""); // 先给空值
 
 //挂载完成
 onMounted(() => {
@@ -454,7 +368,7 @@ onMounted(() => {
             filterable
             clearable
             placeholder="Select"
-            style="width: 240px"
+            style="width: 120px"
           >
             <el-option
               v-for="item in modelOptions"
@@ -463,6 +377,13 @@ onMounted(() => {
               :value="item.value"
             />
           </el-select>
+        </div>
+        <div>
+          <el-radio-group v-model="conf" :disabled="false">
+            <el-radio-button :value="0.25">0.25</el-radio-button>
+            <el-radio-button :value="0.5">0.5</el-radio-button>
+            <el-radio-button :value="0.75">0.75</el-radio-button>
+          </el-radio-group>
         </div>
 
         <!-- 分页控件 -->
@@ -554,49 +475,33 @@ onMounted(() => {
                         @sort-change="handleSortChange"
                         @row-click="previewFile"
                       >
-                        <!--                    <el-table-column-->
-                        <!--                      label="文件ID"-->
-                        <!--                      fixed-->
-                        <!--                      prop="file_id"-->
-                        <!--                      sortable-->
-                        <!--                      width="320"-->
-                        <!--                    />-->
                         <el-table-column
                           align="center"
                           label="文件名称"
                           prop="file_real_name"
                           sortable
                         />
-                        <!-- <el-table-column
-                      align="center"
-                      label="文件类型"
-                      prop="file_type"
-                      sortable
-                    /> -->
-                        <!--                    <el-table-column-->
-                        <!--                      label="文件路径"-->
-                        <!--                      prop="file_path"-->
-                        <!--                      sortable-->
-                        <!--                    />-->
-                        <!-- <el-table-column
-                      align="center"
-                      label="文件描述"
-                      prop="file_comment"
-                      sortable
-                    /> -->
                         <el-table-column
                           align="center"
                           label="上传时间"
                           prop="file_create_time"
                           sortable
                         />
-
                         <el-table-column
                           align="center"
                           label="检测"
                           prop="is_detected"
                           sortable
-                        />
+                        >
+                          <template v-slot="scope">
+                            <!-- 如果 is_detected 为 False，则显示 False，否则显示 True -->
+                            <span>{{
+                              scope.row.is_detected === "False"
+                                ? "False"
+                                : "True"
+                            }}</span>
+                          </template>
+                        </el-table-column>
 
                         <el-table-column align="center" label="操作">
                           <template v-slot="scope">
@@ -604,14 +509,18 @@ onMounted(() => {
                               v-if="true"
                               :icon="SetUp"
                               type="default"
-                              @click="detectFiles(scope.row)"
-                            />
+                              @click.stop="detectFiles(scope.row)"
+                            >
+                              检测
+                            </el-button>
                             <el-button
                               v-if="true"
                               :icon="Download"
                               type="default"
-                              @click="downloadFiles(scope.row)"
-                            />
+                              @click.stop="downloadFiles(scope.row)"
+                            >
+                              下载
+                            </el-button>
                           </template>
                         </el-table-column>
                       </el-table>
@@ -630,7 +539,7 @@ onMounted(() => {
                   >
                     <div>
                       <el-table
-                        :data="tableData"
+                        :data="detectTableData"
                         border
                         stripe
                         @sort-change="handleSortChange"
@@ -638,57 +547,57 @@ onMounted(() => {
                       >
                         <el-table-column
                           align="center"
-                          label="类别"
-                          prop="file_real_name"
+                          label="文件名称"
+                          prop="file_name"
                           sortable
                         />
                         <el-table-column
                           align="center"
-                          label="坐标"
-                          prop="file_type"
-                          sortable
-                        />
-                        <el-table-column
-                          label="目标大小"
-                          prop="file_path"
+                          label="类别"
+                          prop="cls"
                           sortable
                         />
                         <el-table-column
                           align="center"
                           label="置信度"
-                          prop="file_comment"
+                          prop="conf"
+                          sortable
+                        />
+                        <el-table-column
+                          label="YOLO坐标"
+                          prop="yolo_coord"
                           sortable
                         />
                         <el-table-column
                           align="center"
-                          label="是否正确"
-                          prop="file_create_time"
+                          label="像素坐标"
+                          prop="detect_coord"
                           sortable
                         />
-
                         <el-table-column
                           align="center"
-                          label="检测"
-                          prop="is_detected"
+                          label="目标面积"
+                          prop="detect_area"
                           sortable
                         />
-
-                        <!-- <el-table-column align="center" label="操作">
+                        <el-table-column
+                          align="center"
+                          label="图像尺寸"
+                          prop="image_size"
+                          sortable
+                        />
+                        <el-table-column align="center" label="下载结果">
                           <template v-slot="scope">
-                            <el-button
-                              v-if="true"
-                              :icon="SetUp"
-                              type="default"
-                              @click="detectFiles(scope.row)"
-                            />
                             <el-button
                               v-if="true"
                               :icon="Download"
                               type="default"
-                              @click="downloadFiles(scope.row)"
-                            />
+                              @click.stop="downloadFiles(scope.row)"
+                            >
+                              下载
+                            </el-button>
                           </template>
-                        </el-table-column> -->
+                        </el-table-column>
                       </el-table>
                     </div>
                   </div>
@@ -706,10 +615,10 @@ onMounted(() => {
               <el-scrollbar>
                 <div class="dv-a">
                   <!--              图像-->
-                  <div v-if="['png', 'jpg', 'jpeg'].includes(fileExt)">
+                  <div>
                     <img
                       :src="previewUrl"
-                      style="height: 100%; width: auto; object-fit: contain"
+                      style="width: auto; height: 100%; object-fit: contain"
                       alt=""
                       fit="contain"
                     />
@@ -722,10 +631,10 @@ onMounted(() => {
               <el-scrollbar>
                 <div class="dv-a">
                   <!--              图像-->
-                  <div v-if="['png', 'jpg', 'jpeg'].includes(fileExt)">
+                  <div>
                     <img
-                      :src="previewUrl"
-                      style="height: 100%; width: auto; object-fit: contain"
+                      :src="detectUrl"
+                      style="width: auto; height: 100%; object-fit: contain"
                       alt=""
                       fit="contain"
                     />
@@ -772,8 +681,8 @@ onMounted(() => {
 .loading,
 .error {
   padding: 20px;
-  text-align: center;
   color: #666;
+  text-align: center;
 }
 
 .error {
@@ -782,26 +691,26 @@ onMounted(() => {
 }
 
 .yaml-content {
-  overflow: auto;
   max-height: 600px;
+  overflow: auto;
 }
 
 pre {
-  margin: 0;
   padding: 20px;
-  text-align: left !important; /* 强制左对齐 */
-  white-space: pre !important; /* 保持原始空白字符 */
-  font-family: "Fira Code", "Consolas", "Monaco", monospace;
+  margin: 0;
+  font-family: "Fira Code", Consolas, Monaco, monospace;
   font-size: 14px;
   line-height: 1.5;
+  text-align: left !important; /* 强制左对齐 */
+  white-space: pre !important; /* 保持原始空白字符 */
 }
 
 code {
   display: block;
+  padding: 0 !important;
   text-align: left !important; /* 强制左对齐 */
   white-space: pre !important; /* 保持原始格式 */
   background: none !important;
-  padding: 0 !important;
 }
 
 /* 滚动条样式 */

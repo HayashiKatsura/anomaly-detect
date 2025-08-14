@@ -162,7 +162,8 @@ const handleFileChangeUnified = file => {
   const allowed = {
     weight: [".pt"],
     image: [".png", ".jpg", ".jpeg"],
-    archive: [".zip", ".rar", ".7z"]
+    archive: [".zip", ".rar", ".7z"],
+    config: [".yaml", ".yml"]
   };
   const fileName = file.raw.name.toLowerCase();
   // 判断当前文件所属分组
@@ -217,8 +218,7 @@ const submitFilesUpload = () => {
   uploadFileList.value.forEach(file => {
     formData.append("files", file.raw);
   });
-  // axios.post(API_URL+'/upload_files', formData, {
-  // axios.post(API_URL + '/images', formData, {
+
   axios
     .post(API_URL + "/upload_file", formData, {
       headers: { "Content-Type": "multipart/form-data" }
@@ -288,10 +288,10 @@ const submitFilesUpload = () => {
 };
 
 const previewFile = async file => {
-  currentFile.value = file;
-  let file_path = file.file_path;
+  // currentFile.value = file;
+  let file_name = file.file_real_name;
   // 获取文件扩展名并转换为小写
-  fileExt.value = file_path.toLowerCase().split(".").pop();
+  fileExt.value = file_name.toLowerCase().split(".").pop();
   console.log("fileExt", fileExt.value);
 
   // 定义图像文件扩展名
@@ -303,11 +303,14 @@ const previewFile = async file => {
   if (imageExtensions.includes(fileExt.value)) {
     // 执行读取图像的函数
     try {
-      const res = await axios.post(API_URL + "/show_image", {
-        file_path: file_path
-      });
-      previewUrl.value = res.data.data.url; // 直接更新响应式变量
-      console.log("预览URL:", previewUrl.value); // 调试输出
+      // const res = await axios.post(API_URL + "/show_image", {
+      //   file_path: file_path
+      // });
+      yamlContent.value = "";
+      const res = await axios.get(`${API_URL}/show_image/${file.file_id}`);
+      previewUrl.value = res.data.data.image_url; // 直接更新响应式变量
+      // previewUrl.value = res.data.data.url; // 直接更新响应式变量
+      // console.log("预览URL:", previewUrl.value); // 调试输出
     } catch (error) {
       console.error("预览失败:", error);
       ElMessage.error("预览失败: " + error.message);
@@ -315,9 +318,11 @@ const previewFile = async file => {
   } else if (textExtensions.includes(fileExt.value)) {
     // 执行读取文本的函数
     try {
-      const res = await axios.post(API_URL + "/get_yaml", {
-        file_path: file_path
-      });
+      // const res = await axios.post(API_URL + "/get_yaml", {
+      //   file_path: file_path
+      // });
+      previewUrl.value = "";
+      const res = await axios.get(`${API_URL}/show_text/${file.file_id}`);
       console.log("txt", res.data.data);
 
       yamlContent.value = res.data.data; // 直接更新响应式变量
@@ -331,15 +336,19 @@ const previewFile = async file => {
   }
 };
 const deleteFile = async file => {
-  currentFile.value = file;
+  // currentFile.value = file;
   try {
-    const res = await axios.post(API_URL + "/delete_file", {
-      file_path: file.file_path
-    });
-    console.log("删除成功:", file.file_path); // 调试输出
-    ElMessage.success("删除成功: " + file.file_path);
+    // const res = await axios.post(API_URL + "/delete_file", {
+    //   file_path: file.file_path
+    // });
+
+    const res = await axios.delete(`${API_URL}/delete_file/${file.file_id}`);
+    // console.log("删除成功:", file.file_real_name); // 调试输出
+    previewUrl.value = "";
+    yamlContent.value = "";
+    ElMessage.success("删除成功: " + file.file_real_name);
   } catch (error) {
-    console.error("删除失败:", file.file_path);
+    console.error("删除失败:", file.file_real_name);
     ElMessage.error("删除失败: " + error.message);
   } finally {
     getTableData();
@@ -493,13 +502,6 @@ onMounted(() => {
                     @sort-change="handleSortChange"
                     @row-click="previewFile"
                   >
-                    <!--                    <el-table-column-->
-                    <!--                      label="文件ID"-->
-                    <!--                      fixed-->
-                    <!--                      prop="file_id"-->
-                    <!--                      sortable-->
-                    <!--                      width="320"-->
-                    <!--                    />-->
                     <el-table-column
                       align="center"
                       label="文件名称"
@@ -512,11 +514,6 @@ onMounted(() => {
                       prop="file_type"
                       sortable
                     />
-                    <!--                    <el-table-column-->
-                    <!--                      label="文件路径"-->
-                    <!--                      prop="file_path"-->
-                    <!--                      sortable-->
-                    <!--                    />-->
                     <el-table-column
                       align="center"
                       label="文件描述"
@@ -532,17 +529,25 @@ onMounted(() => {
 
                     <el-table-column align="center" label="操作">
                       <template v-slot="scope">
-                        <el-button
-                          v-if="true"
+                        <el-popconfirm
+                          confirm-button-text="删除"
+                          cancel-button-text="取消"
                           :icon="Delete"
-                          type="default"
-                          @click="deleteFile(scope.row)"
-                        />
+                          icon-color="#626AEF"
+                          title="是否确认删除？"
+                          @confirm="deleteFile(scope.row)"
+                          @cancel="console.log('cancel!')"
+                        >
+                          <template #reference>
+                            <el-button :icon="Delete" />
+                          </template>
+                        </el-popconfirm>
+
                         <el-button
                           v-if="true"
                           :icon="Download"
                           type="default"
-                          @click="downloadFiles(scope.row)"
+                          @click.stop="downloadFiles(scope.row)"
                         />
                       </template>
                     </el-table-column>
@@ -561,8 +566,9 @@ onMounted(() => {
               <!--              图像-->
               <div v-if="['png', 'jpg', 'jpeg'].includes(fileExt)">
                 <img
+                  v-if="previewUrl"
                   :src="previewUrl"
-                  style="height: 100%; width: 100%; object-fit: contain"
+                  style="width: 100%; height: 100%; object-fit: contain"
                   alt=""
                   fit="contain"
                 />
@@ -612,8 +618,8 @@ onMounted(() => {
 .loading,
 .error {
   padding: 20px;
-  text-align: center;
   color: #666;
+  text-align: center;
 }
 
 .error {
@@ -622,26 +628,26 @@ onMounted(() => {
 }
 
 .yaml-content {
-  overflow: auto;
   max-height: 600px;
+  overflow: auto;
 }
 
 pre {
-  margin: 0;
   padding: 20px;
-  text-align: left !important; /* 强制左对齐 */
-  white-space: pre !important; /* 保持原始空白字符 */
-  font-family: "Fira Code", "Consolas", "Monaco", monospace;
+  margin: 0;
+  font-family: "Fira Code", Consolas, Monaco, monospace;
   font-size: 14px;
   line-height: 1.5;
+  text-align: left !important; /* 强制左对齐 */
+  white-space: pre !important; /* 保持原始空白字符 */
 }
 
 code {
   display: block;
+  padding: 0 !important;
   text-align: left !important; /* 强制左对齐 */
   white-space: pre !important; /* 保持原始格式 */
   background: none !important;
-  padding: 0 !important;
 }
 
 /* 滚动条样式 */
