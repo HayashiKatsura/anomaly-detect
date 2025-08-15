@@ -61,6 +61,8 @@ const detectTableData = ref([]);
 const modelOptions = ref([]);
 const modelValue = ref(""); // 先给空值
 
+const dataYamlOptions = ref([]);
+const dataYamlValue = ref(""); // 先给空值
 // 获取表单数据
 const getTableData = () => {
   axios
@@ -75,22 +77,37 @@ const getTableData = () => {
           return;
         } else {
           allData.value = data.data;
+
+          // 待检测的图片
           imagesData.value = allData.value.filter(
             item =>
               item.file_comment == "upload_image" ||
               item.file_comment == "image-folder"
           );
-          console.log("imagesData", imagesData.value);
+          // console.log("imagesData", imagesData.value);
+
+          // 待检测的模型
           weightsData.value = allData.value.filter(
             item => item.file_comment == "upload_weight"
           );
-          console.log("weightsData", weightsData.value);
+          // console.log("weightsData", weightsData.value);
           modelOptions.value = weightsData.value.map(item => ({
             value: item.file_id,
             label: item.file_real_name
           }));
           if (modelOptions.value.length > 0) {
             modelValue.value = modelOptions.value[0].value;
+          }
+
+          // 待检测的数据集文件
+          dataYamlOptions.value = allData.value
+            .filter(item => item.file_comment == "upload_yaml")
+            .map(item => ({
+              value: item.file_id,
+              label: item.file_real_name
+            }));
+          if (dataYamlOptions.value.length > 0) {
+            dataYamlValue.value = dataYamlOptions.value[0].value;
           }
 
           filterAndSortData();
@@ -314,6 +331,22 @@ onMounted(() => {
           </el-select>
         </div>
         <div>
+          <el-select
+            v-model="dataYamlValue"
+            filterable
+            clearable
+            placeholder="Select"
+            style="width: 120px"
+          >
+            <el-option
+              v-for="item in dataYamlOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+        </div>
+        <div>
           <el-radio-group v-model="conf" :disabled="false">
             <el-radio-button :value="0.25">0.25</el-radio-button>
             <el-radio-button :value="0.5">0.5</el-radio-button>
@@ -368,7 +401,7 @@ onMounted(() => {
                   >
                     <div>
                       <el-table
-                        :data="tableData"
+                        :data="weightsData"
                         row-key="file_id"
                         border
                         stripe
