@@ -22,7 +22,7 @@ import {
 } from "@pureadmin/utils";
 
 defineOptions({
-  name: "FilesDetect"
+  name: "ModelVal"
 });
 
 const settingLR: ContextProps = reactive({

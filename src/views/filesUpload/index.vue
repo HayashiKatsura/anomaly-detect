@@ -24,24 +24,11 @@ import {
   downloadByData,
   downloadByUrl
 } from "@pureadmin/utils";
+
 defineOptions({
   name: "FilesUpload"
 });
 
-const settingLR: ContextProps = reactive({
-  minPercent: 20,
-  defaultPercent: 60,
-  split: "vertical"
-});
-
-const settingTB: ContextProps = reactive({
-  minPercent: 20,
-  defaultPercent: 40,
-  split: "horizontal"
-});
-
-const uploadFileList = ref([]);
-const dialogVisible = ref(false);
 const uploading = ref(false);
 const tableData = ref([]);
 const pageSize = ref(16);
@@ -53,10 +40,40 @@ const sortProp = ref("");
 const sortOrder = ref("");
 const fileName = ref("");
 const previewUrl = ref("");
-const currentFile = ref(null);
 const fileExt = ref(null);
-const yamlContent = ref("");
+const textContent = ref("");
+const uploadFileList = ref([]);
+const dialogVisible = ref(false);
+const uploadMode = ref("random");
+const selectedFolderId = ref(null);
 
+const settingLR: ContextProps = reactive({
+  minPercent: 20,
+  defaultPercent: 60,
+  split: "vertical"
+});
+
+// 随机上传
+const openRandomUpload = () => {
+  uploadMode.value = "random";
+  selectedFolderId.value = null;
+  dialogVisible.value = true;
+};
+
+// 指定文件夹上传
+const openFolderUpload = row => {
+  selectedFolderId.value = row.file_id;
+  uploadMode.value = "folder";
+  selectedFolderId.value = row.file_id;
+  dialogVisible.value = true;
+};
+
+const closeDialog = () => {
+  uploadFileList.value = [];
+  dialogVisible.value = false;
+  uploadMode.value = "random";
+  selectedFolderId.value = null;
+};
 // 获取表单数据
 const getTableData = () => {
   axios
@@ -71,10 +88,6 @@ const getTableData = () => {
           return;
         } else {
           allData.value = data.data;
-          // allData.value.forEach(file => {
-          //   // 使用正则替换掉'data'以前的所有字符
-          //   file.file_path = file.file_path.replace(/^.*?data/, 'data');
-          // });
           console.log(allData.value);
           console.log(typeof allData.value);
           filterAndSortData();
@@ -220,7 +233,7 @@ const submitFilesUpload = () => {
   });
 
   axios
-    .post(API_URL + "/upload_file", formData, {
+    .post(`${API_URL}/upload_file/${selectedFolderId.value}`, formData, {
       headers: { "Content-Type": "multipart/form-data" }
     })
     .then(response => {
@@ -246,7 +259,6 @@ const submitFilesUpload = () => {
 };
 
 const previewFile = async file => {
-  // currentFile.value = file;
   let file_name = file.file_real_name;
   // 获取文件扩展名并转换为小写
   fileExt.value = file_name.toLowerCase().split(".").pop();
@@ -261,14 +273,9 @@ const previewFile = async file => {
   if (imageExtensions.includes(fileExt.value)) {
     // 执行读取图像的函数
     try {
-      // const res = await axios.post(API_URL + "/show_image", {
-      //   file_path: file_path
-      // });
-      yamlContent.value = "";
+      textContent.value = "";
       const res = await axios.get(`${API_URL}/show_image/${file.file_id}`);
       previewUrl.value = res.data.data.image_url; // 直接更新响应式变量
-      // previewUrl.value = res.data.data.url; // 直接更新响应式变量
-      // console.log("预览URL:", previewUrl.value); // 调试输出
     } catch (error) {
       console.error("预览失败:", error);
       ElMessage.error("预览失败: " + error.message);
@@ -276,14 +283,11 @@ const previewFile = async file => {
   } else if (textExtensions.includes(fileExt.value)) {
     // 执行读取文本的函数
     try {
-      // const res = await axios.post(API_URL + "/get_yaml", {
-      //   file_path: file_path
-      // });
       previewUrl.value = "";
       const res = await axios.get(`${API_URL}/show_text/${file.file_id}`);
       console.log("txt", res.data.data);
 
-      yamlContent.value = res.data.data; // 直接更新响应式变量
+      textContent.value = res.data.data; // 直接更新响应式变量
     } catch (error) {
       console.error("预览失败:", error);
       ElMessage.error("预览失败: " + error.message);
@@ -294,11 +298,10 @@ const previewFile = async file => {
   }
 };
 const deleteFile = async file => {
-  // currentFile.value = file;
   try {
     const res = await axios.delete(`${API_URL}/delete_file/${file.file_id}`);
     previewUrl.value = "";
-    yamlContent.value = "";
+    textContent.value = "";
     ElMessage.success("删除成功: " + file.file_real_name);
   } catch (error) {
     console.error("删除失败:", file.file_real_name);
@@ -310,16 +313,13 @@ const deleteFile = async file => {
 
 // 文件下载
 const downloadFiles = async file => {
-  let file_id = file.file_id;
   let file_name = file.file_real_name;
   try {
     await axios
-      .get(`${API_URL}/download_file/${file_id}`, {
+      .get(`${API_URL}/download_file/${file.file_id}`, {
         responseType: "blob"
-        // params: { file_path: file_path }
       })
       .then(({ data }) => {
-        // console.log("download", data.type);
         if (data.type === "application/zip") {
           file_name += ".zip";
         }
@@ -332,13 +332,13 @@ const downloadFiles = async file => {
 
 // 计算属性：语法高亮后的内容
 const highlightedContent = computed(() => {
-  if (!yamlContent.value) return "";
+  if (!textContent.value) return "";
 
   try {
-    return Prism.highlight(yamlContent.value, Prism.languages.yaml, "yaml");
+    return Prism.highlight(textContent.value, Prism.languages.yaml, "yaml");
   } catch (e) {
     console.warn("语法高亮失败:", e);
-    return yamlContent.value;
+    return textContent.value;
   }
 });
 
@@ -354,9 +354,9 @@ onMounted(() => {
     <template #header>
       <div class="card-header flex items-center space-x-10">
         <div class="action-buttons-container">
-          <el-button :icon="Upload" type="primary" @click="dialogVisible = true"
-            >上传文件</el-button
-          >
+          <el-button :icon="Upload" type="primary" @click="openRandomUpload">
+            上传文件
+          </el-button>
         </div>
 
         <!-- 分页控件 -->
@@ -390,7 +390,12 @@ onMounted(() => {
           >
         </div>
 
-        <el-dialog v-model="dialogVisible" title="上传文件" width="30%">
+        <el-dialog
+          v-model="dialogVisible"
+          :title="uploadMode === 'folder' ? '上传到当前文件夹' : '上传文件'"
+          width="30%"
+          @close="closeDialog"
+        >
           <el-upload
             v-model:file-list="uploadFileList"
             :auto-upload="false"
@@ -408,19 +413,21 @@ onMounted(() => {
             </div>
             <template #tip>
               <div class="el-upload__tip">
-                支持上传以下文件类型：.pt、png、jpg、jpeg、zip、rar、7z，总大小不超过100MB。上传时只能选择单一文件类型。
+                支持上传以下文件类型：.pt、png、jpg、jpeg、zip、rar、7z，总大小不超过100MB。
               </div>
             </template>
           </el-upload>
+
           <template #footer>
             <span class="dialog-footer">
-              <el-button @click="dialogVisible = false">取消</el-button>
+              <el-button @click="closeDialog">取消</el-button>
               <el-button
                 :loading="uploading"
                 type="primary"
                 @click="submitFilesUpload"
-                >上传文件</el-button
               >
+                上传
+              </el-button>
             </span>
           </template>
         </el-dialog>
@@ -429,7 +436,7 @@ onMounted(() => {
 
     <div class="split-pane">
       <splitpane :splitSet="settingLR">
-        <!-- #paneL 表示指定该组件为左侧面板 -->
+        <!-- #paneL 表格面板 -->
         <template #paneL>
           <!-- 自定义右侧面板的内容 -->
           <el-scrollbar>
@@ -439,7 +446,7 @@ onMounted(() => {
                 <div>
                   <el-table
                     :data="tableData"
-                    row-key="file_folder_id"
+                    row-key="file_id"
                     border
                     stripe
                     default-expand-all
@@ -473,6 +480,20 @@ onMounted(() => {
 
                     <el-table-column align="center" label="操作">
                       <template v-slot="scope">
+                        <el-button
+                          v-if="scope.row.file_comment.includes('folder')"
+                          :icon="Upload"
+                          type="default"
+                          @click.stop="openFolderUpload(scope.row)"
+                        />
+
+                        <el-button
+                          v-if="true"
+                          :icon="Download"
+                          type="default"
+                          @click.stop="downloadFiles(scope.row)"
+                        />
+
                         <el-popconfirm
                           confirm-button-text="删除"
                           cancel-button-text="取消"
@@ -486,13 +507,6 @@ onMounted(() => {
                             <el-button :icon="Delete" />
                           </template>
                         </el-popconfirm>
-
-                        <el-button
-                          v-if="true"
-                          :icon="Download"
-                          type="default"
-                          @click.stop="downloadFiles(scope.row)"
-                        />
                       </template>
                     </el-table-column>
                   </el-table>
@@ -502,7 +516,7 @@ onMounted(() => {
           </el-scrollbar>
         </template>
 
-        <!-- #paneR 表示指定该组件为右侧面板 -->
+        <!-- #paneR 显示面板 -->
         <template #paneR>
           <!-- 自定义右侧面板的内容 -->
           <el-scrollbar>
@@ -517,7 +531,7 @@ onMounted(() => {
                   fit="contain"
                 />
               </div>
-              <!--              yaml-->
+              <!--              txt-->
               <div v-else-if="['yaml', 'yml', 'txt'].includes(fileExt)" />
               <pre>
                 <code class="text-left" v-html="highlightedContent"/>
