@@ -504,46 +504,73 @@ onMounted(() => {
                       >
                         <el-table-column
                           align="center"
-                          label="文件名称"
+                          label="置信度"
                           prop="file_name"
                           sortable
                         />
                         <el-table-column
                           align="center"
-                          label="类别"
-                          width="100"
+                          label="mAP50"
                           prop="cls"
                           sortable
                         />
                         <el-table-column
                           align="center"
-                          label="置信度"
-                          width="100"
+                          label="precision"
+                          prop="cls"
+                          sortable
+                        />
+                        <el-table-column
+                          align="center"
+                          label="recall"
+                          prop="cls"
+                          sortable
+                        />
+                        <el-table-column
+                          align="center"
+                          label="mAP75"
                           prop="conf"
                           sortable
                         />
                         <el-table-column
                           align="center"
-                          label="YOLO坐标"
+                          label="mAP50-95"
                           prop="yolo_coord"
                           sortable
                         />
                         <el-table-column
                           align="center"
-                          label="像素坐标"
+                          label="black"
                           prop="detect_coord"
                           sortable
                         />
                         <el-table-column
                           align="center"
-                          label="目标面积"
-                          width="150"
+                          label="damage"
                           prop="detect_area"
                           sortable
                         />
                         <el-table-column
                           align="center"
-                          label="图像尺寸"
+                          label="ink"
+                          prop="image_size"
+                          sortable
+                        />
+                        <el-table-column
+                          align="center"
+                          label="residue"
+                          prop="image_size"
+                          sortable
+                        />
+                        <el-table-column
+                          align="center"
+                          label="pi"
+                          prop="image_size"
+                          sortable
+                        />
+                        <el-table-column
+                          align="center"
+                          label="circle"
                           prop="image_size"
                           sortable
                         />
