@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import splitpane, { ContextProps } from "@/components/ReSplitPane";
 import { onMounted, reactive, ref, computed } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElNotification } from "element-plus";
 import axios from "axios";
 import { API_URL } from "@/url.js";
 import { PlusDialogForm } from "plus-pro-components";
@@ -12,14 +12,11 @@ import {
   UploadFilled,
   View,
   Download,
-  SetUp
+  SetUp,
+  ArrowLeft,
+  ArrowRight
 } from "@element-plus/icons-vue";
-import {
-  downloadByOnlineUrl,
-  downloadByBase64,
-  downloadByData,
-  downloadByUrl
-} from "@pureadmin/utils";
+import { downloadByData } from "@pureadmin/utils";
 
 defineOptions({
   name: "ModelVal"
@@ -27,13 +24,13 @@ defineOptions({
 
 const settingLR: ContextProps = reactive({
   minPercent: 20,
-  defaultPercent: 75,
+  defaultPercent: 70,
   split: "vertical"
 });
 
 const settingTB: ContextProps = reactive({
-  minPercent: 15,
-  defaultPercent: 85,
+  minPercent: 20,
+  defaultPercent: 80,
   split: "horizontal"
 });
 
@@ -50,11 +47,8 @@ const weightsData = ref([]);
 const sortProp = ref("");
 const sortOrder = ref("");
 const fileName = ref("");
-const previewUrl = ref("");
-const detectUrl = ref("");
 const currentFile = ref(null);
-const conf = ref(0.25);
-const detectTableData = ref([]);
+const valTableData = ref([]);
 const modelOptions = ref([]);
 const modelValue = ref(""); // 先给空值
 
@@ -65,19 +59,10 @@ const showType = ref(false); //展示类型 True 单张展示， False 全部展
 const visible = ref(false);
 const formValues = ref({});
 const columns = ref([]);
+const currentPage = ref(0); // 切图
+const previewUrl = ref([]);
+const fileRow = ref(null);
 
-const srcList = [
-  "https://fuss10.elemecdn.com/a/3f/3302e58f9a181d2509f3dc0fa68b0jpeg.jpeg",
-  "https://fuss10.elemecdn.com/1/34/19aa98b1fcb2781c4fba33d850549jpeg.jpeg",
-  "https://fuss10.elemecdn.com/0/6f/e35ff375812e6b0020b6b4e8f9583jpeg.jpeg",
-  "https://fuss10.elemecdn.com/9/bb/e27858e973f5d7d3904835f46abbdjpeg.jpeg",
-  "https://fuss10.elemecdn.com/d/e6/c4d93a3805b3ce3f323f7974e6f78jpeg.jpeg",
-  "https://fuss10.elemecdn.com/3/28/bbf893f792f03a54408b3b7a7ebf0jpeg.jpeg",
-  "https://fuss10.elemecdn.com/2/11/6535bcfb26e4c79b48ddde44f4b6fjpeg.jpeg",
-  "https://fuss10.elemecdn.com/a/3f/3302e58f9a181d2509f3dc0fa68b0jpeg.jpeg",
-  "https://fuss10.elemecdn.com/1/34/19aa98b1fcb2781c4fba33d850549jpeg.jpeg",
-  "https://fuss10.elemecdn.com/0/6f/e35ff375812e6b0020b6b4e8f9583jpeg.jpeg"
-];
 // 获取表单数据
 const getTableData = () => {
   axios
@@ -92,20 +77,10 @@ const getTableData = () => {
           return;
         } else {
           allData.value = data.data;
-
-          // 待验证的图片
-          imagesData.value = allData.value.filter(
-            item =>
-              item.file_comment == "upload_image" ||
-              item.file_comment == "image-folder"
-          );
-          // console.log("imagesData", imagesData.value);
-
           // 待验证的模型
           weightsData.value = allData.value.filter(
             item => item.file_comment == "upload_weight"
           );
-          // console.log("weightsData", weightsData.value);
           modelOptions.value = weightsData.value.map(item => ({
             value: item.file_id,
             label: item.file_real_name
@@ -242,9 +217,15 @@ const previewFile = async file => {
   // 读取图像的函数
   try {
     const res = await axios.get(`${API_URL}/show_image/${file.file_id}`);
-    previewUrl.value = res.data.data.image_url; // 直接更新响应式变量
-    detectUrl.value = res.data.data.detect_url; // 直接更新响应式变量
-    detectTableData.value = res.data.data.detect_result; // 直接更新响应式变量
+    console.log("res", res.data.data);
+    valTableData.value = [res.data.data.metrics]; // 直接更新响应式变量
+    previewUrl.value = res.data.data.val_images;
+    ElNotification.success({
+      title: "已存在验证结果",
+      message: "",
+      showClose: false,
+      duration: 1000
+    });
   } catch (error) {
     console.error("预览失败:", error);
     ElMessage.error("预览失败: " + error.message);
@@ -252,51 +233,59 @@ const previewFile = async file => {
 };
 
 const valWeights = async file => {
+  // 弹出表单
   visible.value = true;
+  fileRow.value = file;
+};
+
+const confirmDialog = async filedValues => {
+  visible.value = false;
   try {
-    const res = await axios.get(API_URL + "/val_weight", {
-      params: valWeightsParams.value
+    ElNotification.warning({
+      title: "正在验证...",
+      showClose: false,
+      duration: 1000
     });
-
-    // 轮询检查数据
-    const checkData = () => {
-      if (res.data.data && res.data.data.length > 0) {
-        detectTableData.value = res.data.data;
-        if (!String(file.file_id).includes("folder")) {
-          detectUrl.value = res.data.data[0].detect_image_base64;
-        }
-      } else {
-        // 1s后再次检查
-        setTimeout(checkData, 1000);
+    const res = await axios.get(
+      `${API_URL}/val_weight/${fileRow.value.file_id}`,
+      {
+        params: filedValues
       }
-    };
-
-    checkData();
+    );
+    console.log("res", res);
+    valTableData.value = [res.data.data.metrics]; // 直接更新响应式变量
+    previewUrl.value = res.data.data.val_images;
+    ElNotification.success({
+      title: "验证成功",
+      showClose: false,
+      duration: 1000
+    });
   } catch (error) {
     console.error("验证失败:", error.message);
     ElMessage.error("验证失败: " + error.message);
   } finally {
     getTableData();
-    valWeightsParams.value = {};
   }
 };
 
-// TODO: 验证文件夹下载存在问题
+const cancelDialog = () => {
+  visible.value = false;
+};
+
 // 文件下载
 const downloadFiles = async file => {
   console.log("downloadFiles", file);
   let file_name = file.file_real_name;
+  let val_folder_id = file.is_detected;
+  let val_conf = val_folder_id.replace("val-folder-", "").substring(0, 4);
   try {
     await axios
-      .get(`${API_URL}/download_file/${file.file_id}`, {
-        responseType: "blob",
-        params: {
-          detect_id: file.is_detected
-        }
+      .get(`${API_URL}/download_file/${val_folder_id}`, {
+        responseType: "blob"
       })
       .then(({ data }) => {
         if (data.type === "application/zip") {
-          file_name += ".zip";
+          file_name = `${file_name}_${val_conf}.zip`;
         }
         downloadByData(data, file_name);
       });
@@ -347,18 +336,20 @@ const shouldShowDownloadButton = row => {
   return row.is_detected !== "False";
 };
 
-const handleOpen = () => {
-  visible.value = true;
-  console.log("columns", columns);
-};
-
-const valWeightsParams = ref({});
-const confirmDialog = filedValues => {
-  visible.value = false;
-  valWeightsParams.value = filedValues;
-};
-const cancelDialog = () => {
-  visible.value = false;
+const changePage = op => {
+  if (op > 0) {
+    if (currentPage.value === previewUrl.value.length - 1) {
+      currentPage.value = 0;
+    } else {
+      currentPage.value += 1;
+    }
+  } else {
+    if (currentPage.value === 0) {
+      currentPage.value = previewUrl.value.length - 1;
+    } else {
+      currentPage.value -= 1;
+    }
+  }
 };
 
 //挂载完成
@@ -374,7 +365,9 @@ onMounted(() => {
       <div class="card-header flex justify-between">
         <!-- 切换预览模式 -->
         <div class="hover:cursor-pointer" @click="showType = !showType">
-          <el-text class="mx-1" type="warning">切换预览模式</el-text>
+          <el-text v-if="previewUrl.length > 0" class="mx-1" type="warning"
+            >切换预览模式</el-text
+          >
         </div>
 
         <!-- 弹出表单 -->
@@ -430,25 +423,38 @@ onMounted(() => {
         <template #paneL>
           <splitpane :splitSet="settingTB">
             <template #paneL>
-              <div v-if="!showType" class="h-full w-full">
-                <el-image
-                  style="width: 100%; height: 100%; object-fit: contain"
-                  :src="srcList[0]"
-                  :zoom-rate="1.2"
-                  :max-scale="7"
-                  :min-scale="0.2"
-                  :preview-src-list="srcList"
-                  show-progress
-                  :initial-index="0"
-                  fit="contain"
+              <div
+                v-if="!showType && previewUrl.length > 0"
+                class="h-full w-full bg-gray-200 flex"
+              >
+                <div
+                  class="w-[5%] hover:bg-white hover:cursor-pointer"
+                  @click.stop="changePage(-1)"
+                />
+                <div class="w-[90%]">
+                  <el-image
+                    style="width: 100%; height: 100%; object-fit: contain"
+                    :src="previewUrl[currentPage]"
+                    :zoom-rate="1.2"
+                    :max-scale="7"
+                    :min-scale="0.2"
+                    :preview-src-list="previewUrl"
+                    show-progress
+                    :initial-index="0"
+                    fit="contain"
+                  />
+                </div>
+                <div
+                  class="w-[5%] hover:bg-white hover:cursor-pointer"
+                  @click.stop="changePage(1)"
                 />
               </div>
               <div
-                v-if="showType"
-                class="w-full h-full grid grid-cols-5 grid-rows-2 gap-2 p-4"
+                v-if="showType && previewUrl.length > 0"
+                class="w-full h-full grid grid-cols-6 grid-rows-2 gap-2 p-4"
               >
                 <div
-                  v-for="(item, index) in srcList"
+                  v-for="(item, index) in previewUrl"
                   :key="index"
                   class="relative overflow-hidden rounded-lg border border-gray-200"
                 >
@@ -458,7 +464,7 @@ onMounted(() => {
                     :zoom-rate="1.2"
                     :max-scale="7"
                     :min-scale="0.2"
-                    :preview-src-list="srcList"
+                    :preview-src-list="previewUrl"
                     :show-progress="true"
                     :initial-index="index"
                     fit="cover"
@@ -476,81 +482,82 @@ onMounted(() => {
                   >
                     <div>
                       <el-table
-                        :data="detectTableData"
+                        :data="valTableData"
                         border
                         stripe
+                        style="font-size: x-small"
                         @sort-change="handleSortChange"
                       >
                         <el-table-column
                           align="center"
                           label="置信度"
-                          prop="file_name"
-                          sortable
-                        />
-                        <el-table-column
-                          align="center"
-                          label="mAP50"
-                          prop="cls"
-                          sortable
-                        />
-                        <el-table-column
-                          align="center"
-                          label="precision"
-                          prop="cls"
-                          sortable
-                        />
-                        <el-table-column
-                          align="center"
-                          label="recall"
-                          prop="cls"
-                          sortable
-                        />
-                        <el-table-column
-                          align="center"
-                          label="mAP75"
                           prop="conf"
                           sortable
                         />
                         <el-table-column
                           align="center"
+                          label="mAP50"
+                          prop="mAP50"
+                          sortable
+                        />
+                        <el-table-column
+                          align="center"
+                          label="precision"
+                          prop="precision"
+                          sortable
+                        />
+                        <el-table-column
+                          align="center"
+                          label="recall"
+                          prop="recall"
+                          sortable
+                        />
+                        <el-table-column
+                          align="center"
+                          label="mAP75"
+                          prop="mAP75"
+                          sortable
+                        />
+                        <el-table-column
+                          align="center"
                           label="mAP50-95"
-                          prop="yolo_coord"
+                          prop="mAP50-95"
                           sortable
                         />
                         <el-table-column
                           align="center"
                           label="black"
-                          prop="detect_coord"
+                          prop="black"
                           sortable
                         />
                         <el-table-column
                           align="center"
                           label="damage"
-                          prop="detect_area"
+                          prop="damage"
                           sortable
                         />
                         <el-table-column
                           align="center"
                           label="ink"
-                          prop="image_size"
+                          prop="ink"
                           sortable
                         />
                         <el-table-column
                           align="center"
                           label="residue"
-                          prop="image_size"
+                          prop="residue"
                           sortable
                         />
                         <el-table-column
                           align="center"
                           label="pi"
-                          prop="image_size"
+                          prop="pi"
                           sortable
                         />
                         <el-table-column
                           align="center"
                           label="circle"
-                          prop="image_size"
+                          prop="circle"
                           sortable
                         />
                       </el-table>
@@ -590,26 +597,6 @@ onMounted(() => {
                       prop="file_create_time"
                       sortable
                     />
-                    <!-- <el-table-column
-                          align="center"
-                          label="验证状态"
-                          prop="is_detected"
-                          sortable
-                        >
-                          <template v-slot="scope">
-                            <el-button
-                              v-if="true"
-                              type="default"
-                              @click.stop="valWeights(scope.row)"
-                            >
-                              <span>{{
-                                scope.row.is_detected === "False"
-                                  ? "📷待验证"
-                                  : "✔已验证"
-                              }}</span>
-                            </el-button>
-                          </template>
-                        </el-table-column> -->
                     <el-table-column
                       align="center"
                       label="验证状态"
@@ -625,19 +612,6 @@ onMounted(() => {
                         </el-button>
                       </template>
                     </el-table-column>
-
-                    <!-- <el-table-column align="center" label="下载结果">
-                          <template v-slot="scope">
-                            <el-button
-                              v-if="scope.row.is_detected != 'False'"
-                              :icon="Download"
-                              type="default"
-                              @click.stop="downloadFiles(scope.row)"
-                            >
-                              下载
-                            </el-button>
-                          </template>
-                        </el-table-column> -->
                     <el-table-column align="center" label="下载结果">
                       <template v-slot="scope">
                         <el-button

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import splitpane, { ContextProps } from "@/components/ReSplitPane";
 import { onMounted, reactive, ref, computed } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElNotification } from "element-plus";
 import axios from "axios";
 import { API_URL } from "@/url.js";
-
+import { downloadByData } from "@pureadmin/utils";
 import {
   Delete,
   Search,
@@ -12,14 +12,10 @@ import {
   UploadFilled,
   View,
   Download,
-  SetUp
+  SetUp,
+  ArrowLeft,
+  ArrowRight
 } from "@element-plus/icons-vue";
-import {
-  downloadByOnlineUrl,
-  downloadByBase64,
-  downloadByData,
-  downloadByUrl
-} from "@pureadmin/utils";
 
 defineOptions({
   name: "FilesDetect"
@@ -37,9 +33,6 @@ const settingTB: ContextProps = reactive({
   split: "horizontal"
 });
 
-const uploadFileList = ref([]);
-const dialogVisible = ref(false);
-const uploading = ref(false);
 const tableData = ref([]);
 const pageSize = ref(16);
 const pageNum = ref(1);
@@ -109,7 +102,6 @@ const getTableData = () => {
 // 过滤和排序数据
 const filterAndSortData = () => {
   // 搜索过滤
-  // let filtered = allData.value;
   let filtered = imagesData.value;
   console.log("filtered:", filtered);
   if (fileName.value) {
@@ -184,13 +176,30 @@ const previewFile = async file => {
     previewUrl.value = res.data.data.image_url; // 直接更新响应式变量
     detectUrl.value = res.data.data.detect_url; // 直接更新响应式变量
     detectTableData.value = res.data.data.detect_result; // 直接更新响应式变量
+    ElNotification.success({
+      title: "已存在检测结果",
+      message: "",
+      showClose: false,
+      duration: 1000
+    });
   } catch (error) {
     console.error("预览失败:", error);
-    ElMessage.error("预览失败: " + error.message);
+    ElNotification.error({
+      title: "检测失败",
+      message: "",
+      showClose: false,
+      duration: 1000
+    });
   }
 };
 
 const detectFiles = async file => {
+  ElNotification.warning({
+    title: "正在检测...",
+    message: "",
+    showClose: false,
+    duration: 1000
+  });
   try {
     const res = await axios.get(API_URL + "/detect_file", {
       params: {
@@ -216,7 +225,12 @@ const detectFiles = async file => {
     checkData();
   } catch (error) {
     console.error("检测失败:", error.message);
-    ElMessage.error("检测失败: " + error.message);
+    ElNotification.error({
+      title: "检测失败",
+      message: error.message,
+      showClose: false,
+      duration: 1000
+    });
   } finally {
     getTableData();
   }
@@ -226,6 +240,12 @@ const detectFiles = async file => {
 const downloadFiles = async file => {
   console.log("downloadFiles", file);
   let file_name = file.file_real_name;
+  ElNotification.warning({
+    title: "正在下载...",
+    message: "",
+    showClose: false,
+    duration: 1000
+  });
   try {
     await axios
       .get(`${API_URL}/download_file/${file.file_id}`, {
@@ -240,8 +260,20 @@ const downloadFiles = async file => {
         }
         downloadByData(data, file_name);
       });
+    ElNotification.success({
+      title: "下载成功",
+      message: "",
+      showClose: false,
+      duration: 1000
+    });
   } catch (error) {
-    ElMessage.error("下载失败: " + error.message);
+    // ElMessage.error("下载失败: " + error.message);
+    ElNotification.error({
+      title: "下载失败",
+      message: error.message,
+      showClose: false,
+      duration: 1000
+    });
   }
 };
 
@@ -388,26 +420,6 @@ onMounted(() => {
                           prop="file_create_time"
                           sortable
                         />
-                        <!-- <el-table-column
-                          align="center"
-                          label="检测状态"
-                          prop="is_detected"
-                          sortable
-                        >
-                          <template v-slot="scope">
-                            <el-button
-                              v-if="true"
-                              type="default"
-                              @click.stop="detectFiles(scope.row)"
-                            >
-                              <span>{{
-                                scope.row.is_detected === "False"
-                                  ? "📷待检测"
-                                  : "✔已检测"
-                              }}</span>
-                            </el-button>
-                          </template>
-                        </el-table-column> -->
                         <el-table-column
                           align="center"
                           label="检测状态"
@@ -423,19 +435,6 @@ onMounted(() => {
                             </el-button>
                           </template>
                         </el-table-column>
-
-                        <!-- <el-table-column align="center" label="下载结果">
-                          <template v-slot="scope">
-                            <el-button
-                              v-if="scope.row.is_detected != 'False'"
-                              :icon="Download"
-                              type="default"
-                              @click.stop="downloadFiles(scope.row)"
-                            >
-                              下载
-                            </el-button>
-                          </template>
-                        </el-table-column> -->
                         <el-table-column align="center" label="下载结果">
                           <template v-slot="scope">
                             <el-button
@@ -530,11 +529,16 @@ onMounted(() => {
               <el-scrollbar>
                 <div class="dv-a">
                   <!--              原始图像-->
-                  <div>
-                    <img
+                  <div v-if="previewUrl">
+                    <el-image
+                      style="width: 100%; height: 100%; object-fit: contain"
                       :src="previewUrl"
-                      style="width: auto; height: 100%; object-fit: contain"
-                      alt=""
+                      :zoom-rate="1.2"
+                      :max-scale="7"
+                      :min-scale="0.2"
+                      :preview-src-list="[previewUrl]"
+                      show-progress
+                      :initial-index="0"
                       fit="contain"
                     />
                   </div>
@@ -546,11 +550,16 @@ onMounted(() => {
               <el-scrollbar>
                 <div class="dv-a">
                   <!--              检测图像-->
-                  <div>
-                    <img
+                  <div v-if="previewUrl">
+                    <el-image
+                      style="width: 100%; height: 100%; object-fit: contain"
                       :src="detectUrl"
-                      style="width: auto; height: 100%; object-fit: contain"
-                      alt=""
+                      :zoom-rate="1.2"
+                      :max-scale="7"
+                      :min-scale="0.2"
+                      :preview-src-list="[detectUrl]"
+                      show-progress
+                      :initial-index="0"
                       fit="contain"
                     />
                   </div>

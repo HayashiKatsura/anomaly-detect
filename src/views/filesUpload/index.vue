@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import splitpane, { ContextProps } from "@/components/ReSplitPane";
 import { onMounted, reactive, ref, computed } from "vue";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElNotification } from "element-plus";
+
 import axios from "axios";
 import { API_URL } from "@/url.js";
 import Prism from "prismjs";
@@ -18,12 +19,7 @@ import {
   View,
   Download
 } from "@element-plus/icons-vue";
-import {
-  downloadByOnlineUrl,
-  downloadByBase64,
-  downloadByData,
-  downloadByUrl
-} from "@pureadmin/utils";
+import { downloadByData } from "@pureadmin/utils";
 
 defineOptions({
   name: "FilesUpload"
@@ -94,12 +90,10 @@ const getTableData = () => {
         }
       } catch (error) {
         console.error("解析CSV数据失败:", error);
-        ElMessage.error("无法解析文件数据: " + error.message);
       }
     })
     .catch(error => {
       console.error("加载CSV文件失败:", error);
-      ElMessage.error("加载文件数据失败: " + error.message);
     });
 };
 
@@ -188,7 +182,11 @@ const handleFileChangeUnified = file => {
     }
   }
   if (!fileGroup) {
-    ElMessage.error("文件类型不支持!");
+    ElNotification.error({
+      title: "文件类型不支持!",
+      showClose: false,
+      duration: 1000
+    });
     uploadFileList.value.pop();
     return;
   }
@@ -231,6 +229,12 @@ const submitFilesUpload = () => {
   uploadFileList.value.forEach(file => {
     formData.append("files", file.raw);
   });
+  ElNotification.warning({
+    title: "正在上传...",
+    message: "",
+    showClose: false,
+    duration: 1000
+  });
 
   axios
     .post(`${API_URL}/upload_file/${selectedFolderId.value}`, formData, {
@@ -238,20 +242,32 @@ const submitFilesUpload = () => {
     })
     .then(response => {
       if (response.data.code === 200) {
-        ElMessage.success("文件上传成功");
         dialogVisible.value = false;
         uploadFileList.value = [];
         getTableData();
+        ElNotification.success({
+          title: "上传成功",
+          message: "",
+          showClose: false,
+          duration: 1000
+        });
       } else {
-        ElMessage.error(response.data.code + ": " + response.data.msg);
+        ElNotification.error({
+          title: "上传失败",
+          message: response.data.msg,
+          showClose: false,
+          duration: 1000
+        });
       }
     })
     .catch(error => {
       console.error("上传错误:", error);
-      ElMessage.error(
-        "上传失败: " +
-          (error.response?.data?.msg || error.message || "未知错误")
-      );
+      ElNotification.error({
+        title: "上传失败",
+        message: error.response?.data?.msg || error.message || "未知错误",
+        showClose: false,
+        duration: 1000
+      });
     })
     .finally(() => {
       uploading.value = false;
@@ -278,7 +294,12 @@ const previewFile = async file => {
       previewUrl.value = res.data.data.image_url; // 直接更新响应式变量
     } catch (error) {
       console.error("预览失败:", error);
-      ElMessage.error("预览失败: " + error.message);
+      ElNotification.error({
+        title: "预览失败",
+        message: error.message,
+        showClose: false,
+        duration: 1000
+      });
     }
   } else if (textExtensions.includes(fileExt.value)) {
     // 执行读取文本的函数
@@ -290,11 +311,21 @@ const previewFile = async file => {
       textContent.value = res.data.data; // 直接更新响应式变量
     } catch (error) {
       console.error("预览失败:", error);
-      ElMessage.error("预览失败: " + error.message);
+      ElNotification.error({
+        title: "预览失败",
+        message: error.message,
+        showClose: false,
+        duration: 1000
+      });
     }
   } else {
     // 可选：处理不支持的文件类型
-    console.warn(`不支持的文件类型: ${fileExt.value}`);
+    ElNotification.info({
+      title: "不支持预览的类型",
+      message: fileExt.value,
+      showClose: false,
+      duration: 1000
+    });
   }
 };
 const deleteFile = async file => {
@@ -302,10 +333,20 @@ const deleteFile = async file => {
     const res = await axios.delete(`${API_URL}/delete_file/${file.file_id}`);
     previewUrl.value = "";
     textContent.value = "";
-    ElMessage.success("删除成功: " + file.file_real_name);
+    ElNotification.success({
+      title: "删除成功",
+      message: "删除成功: " + file.file_real_name,
+      showClose: false,
+      duration: 1000
+    });
   } catch (error) {
     console.error("删除失败:", file.file_real_name);
-    ElMessage.error("删除失败: " + error.message);
+    ElNotification.error({
+      title: "删除失败",
+      message: "删除失败: " + error.message,
+      showClose: false,
+      duration: 1000
+    });
   } finally {
     getTableData();
   }
@@ -313,6 +354,11 @@ const deleteFile = async file => {
 
 // 文件下载
 const downloadFiles = async file => {
+  ElNotification.warning({
+    title: "正在下载...",
+    showClose: false,
+    duration: 1000
+  });
   let file_name = file.file_real_name;
   try {
     await axios
@@ -325,8 +371,18 @@ const downloadFiles = async file => {
         }
         downloadByData(data, file_name);
       });
+    ElNotification.success({
+      title: "下载成功",
+      showClose: false,
+      duration: 1000
+    });
   } catch (error) {
-    ElMessage.error("下载失败: " + error.message);
+    ElNotification.error({
+      title: "下载失败",
+      message: error.message,
+      showClose: false,
+      duration: 1000
+    });
   }
 };
 
@@ -523,11 +579,15 @@ onMounted(() => {
             <div class="dv-a">
               <!--              图像-->
               <div v-if="['png', 'jpg', 'jpeg'].includes(fileExt)">
-                <img
-                  v-if="previewUrl"
-                  :src="previewUrl"
+                <el-image
                   style="width: 100%; height: 100%; object-fit: contain"
-                  alt=""
+                  :src="previewUrl"
+                  :zoom-rate="1.2"
+                  :max-scale="7"
+                  :min-scale="0.2"
+                  :preview-src-list="[previewUrl]"
+                  show-progress
+                  :initial-index="0"
                   fit="contain"
                 />
               </div>
