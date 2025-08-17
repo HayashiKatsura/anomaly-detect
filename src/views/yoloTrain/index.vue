@@ -14,7 +14,7 @@ import {
 } from "vue";
 
 // API配置
-const API_BASE = "http://10.12.44.68:5130/api";
+const API_BASE = "http://localhost:5130/zjut";
 
 // 响应式数据
 const apiConnected = ref(false);
@@ -1283,8 +1283,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-
-
 @keyframes pulse {
   0%,
   100% {
