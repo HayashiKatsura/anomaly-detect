@@ -50,10 +50,12 @@ const isCameraOn = ref(false);
 const photoMode = ref("manual"); // 'manual' | 'auto'
 const autoInterval = ref(3); // 自动拍照间隔（秒）
 const isAutoPhotoActive = ref(false);
-const capturedImages = ref([]);
+const currentCapturedImages = ref([]); // 当前已拍摄的图片列表
+const totalCapturedImages = ref(0); // 总共已拍摄的图片数量
 const showFlash = ref(false);
 const isUploading = ref(false);
 const error = ref("");
+const collectData = ref([]);
 
 // 定时器
 let stream = null;
@@ -138,13 +140,28 @@ const takePhoto = () => {
 
   // 转换为base64
   const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+  const timestamp = getFormattedTimestamp();
+  const shortUuid = generateShortUuid();
 
   // 添加到拍摄列表
-  capturedImages.value.push({
+  currentCapturedImages.value.push({
     dataUrl,
-    timestamp: new Date().toISOString(),
-    blob: dataURLtoBlob(dataUrl)
+    timestamp: timestamp,
+    blob: dataURLtoBlob(dataUrl),
+    name: `camera-collect-${timestamp}-${shortUuid}.png`,
+    file_id: `images-${timestamp}-${shortUuid}`
   });
+
+  // 添加到数据列表
+  collectData.value.push({
+    name: `camera-collect-${shortUuid}.png`,
+    date: timestamp,
+    status: false, // 检测状态，默认未检测
+    file_id: `images-${timestamp}-${shortUuid}`
+  });
+
+  //计数列表
+  totalCapturedImages.value += 1;
 
   // 显示拍照闪光效果
   showFlash.value = true;
@@ -153,7 +170,7 @@ const takePhoto = () => {
   }, 200);
 
   // 检查是否需要自动上传
-  if (capturedImages.value.length >= 10) {
+  if (currentCapturedImages.value.length >= 10) {
     autoUploadImages();
   }
 };
@@ -186,24 +203,25 @@ const stopAutoPhoto = () => {
 
 // 删除单张图片
 const removeImage = index => {
-  capturedImages.value.splice(index, 1);
+  currentCapturedImages.value.splice(index, 1);
 };
 
 // 清空所有图片
 const clearAllImages = () => {
-  capturedImages.value = [];
+  currentCapturedImages.value = [];
+  collectData.value = [];
 };
 
 // 手动上传
 const manualUpload = () => {
-  if (capturedImages.value.length > 0) {
+  if (currentCapturedImages.value.length > 0) {
     autoUploadImages();
   }
 };
 
 // 自动上传图片到后端
 const autoUploadImages = async () => {
-  if (isUploading.value || capturedImages.value.length === 0) return;
+  if (isUploading.value || currentCapturedImages.value.length === 0) return;
 
   isUploading.value = true;
   error.value = "";
@@ -211,19 +229,12 @@ const autoUploadImages = async () => {
   try {
     const formData = new FormData();
     // 添加所有图片到FormData
-    capturedImages.value.forEach((image, index) => {
-      const timestamp = getFormattedTimestamp();
-      const shortUuid = generateShortUuid();
-
-      formData.append(
-        "files",
-        image.blob,
-        `camera-collect-${timestamp}-${shortUuid}.png`
-      );
+    currentCapturedImages.value.forEach((image, index) => {
+      formData.append("files", image.blob, `${image.file_id},${image.name}`);
     });
 
     // 添加元数据
-    formData.append("total_count", capturedImages.value.length);
+    formData.append("total_count", currentCapturedImages.value.length);
     formData.append("upload_time", new Date().toISOString());
 
     // 发送到后端 - 请根据实际后端API修改URL
@@ -233,7 +244,7 @@ const autoUploadImages = async () => {
       }
     });
     // 上传成功后清空图片列表
-    capturedImages.value = [];
+    currentCapturedImages.value = [];
     ElNotification.success({
       title: "上传成功",
       showClose: false,
@@ -279,17 +290,22 @@ const getFormattedTimestamp = () => {
 };
 
 // 生成UUID前10位
-const generateShortUuid = () => {
+const generateShortUuid = (index = 10) => {
   if (crypto.randomUUID) {
     // 现代浏览器支持
-    return crypto.randomUUID().substring(0, 10);
+    if (index > 0) return crypto.randomUUID().substring(0, index);
+    return crypto.randomUUID();
   } else {
     // 兼容性方案
-    return "xxxxxxxxxxxx"
-      .replace(/[x]/g, function () {
-        return ((Math.random() * 16) | 0).toString(16);
-      })
-      .substring(0, 10);
+    if (index > 0)
+      return "xxxxxxxxxxxx"
+        .replace(/[x]/g, function () {
+          return ((Math.random() * 16) | 0).toString(16);
+        })
+        .substring(0, index);
+    return "xxxxxxxxxxxx".replace(/[x]/g, function () {
+      return ((Math.random() * 16) | 0).toString(16);
+    });
   }
 };
 
@@ -428,7 +444,7 @@ const downloadFiles = async () => {
             <div class="flex items-center space-x-2">
               <span class="block text-sm text-gray-600">已拍摄</span>
               <span class="block text-lg font-semibold text-blue-600"
-                >{{ capturedImages.length }} 张</span
+                >{{ totalCapturedImages }} 张</span
               >
             </div>
             <!-- 手动拍照按钮 -->
@@ -456,7 +472,7 @@ const downloadFiles = async () => {
                 </div>
               </el-button>
             </div>
-            <div v-if="capturedImages.length > 0">
+            <div v-if="currentCapturedImages.length > 0">
               <el-button
                 size="small"
                 :icon="Delete"
@@ -467,7 +483,7 @@ const downloadFiles = async () => {
                 >清空所有照片</el-button
               >
             </div>
-            <div v-if="isCameraOn && capturedImages.length > 0">
+            <div v-if="isCameraOn && currentCapturedImages.length > 0">
               <el-button
                 size="small"
                 :icon="Upload"
@@ -548,15 +564,15 @@ const downloadFiles = async () => {
                     </div>
 
                     <!-- 拍摄的照片预览 -->
-                    <!-- <div v-if="capturedImages.length > 0" class="mb-6">
+                    <!-- <div v-if="currentCapturedImages.length > 0" class="mb-6">
                       <h3 class="text-xl font-semibold mb-4 text-gray-800">
-                        拍摄的照片 ({{ capturedImages.length }}/10)
+                        拍摄的照片 ({{ currentCapturedImages.length }}/10)
                       </h3>
                       <div
                         class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4"
                       >
                         <div
-                          v-for="(image, index) in capturedImages"
+                          v-for="(image, index) in currentCapturedImages"
                           :key="index"
                           class="relative group"
                         >
@@ -582,7 +598,7 @@ const downloadFiles = async () => {
 
                     <!-- 操作按钮 -->
                     <!-- <div
-                      v-if="capturedImages.length > 0"
+                      v-if="currentCapturedImages.length > 0"
                       class="flex justify-center space-x-4"
                     >
                       <button
@@ -593,7 +609,7 @@ const downloadFiles = async () => {
                       </button>
                       <button
                         @click="manualUpload"
-                        :disabled="isUploading || capturedImages.length === 0"
+                        :disabled="isUploading || currentCapturedImages.length === 0"
                         class="px-4 py-2 bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white rounded-lg transition-all duration-200"
                       >
                         手动上传照片
@@ -611,7 +627,7 @@ const downloadFiles = async () => {
               <el-scrollbar>
                 <div class="dv-b">
                   <div>
-                    <el-table :data="tableData" style="width: 100%">
+                    <el-table :data="collectData" style="width: 100%">
                       <el-table-column
                         align="center"
                         type="selection"
@@ -630,7 +646,7 @@ const downloadFiles = async () => {
                       />
                       <el-table-column
                         align="center"
-                        prop="state"
+                        prop="status"
                         label="检测状态"
                       />
                       <el-table-column
@@ -659,7 +675,7 @@ const downloadFiles = async () => {
         <template #paneR>
           <el-scrollbar>
             <div>
-              <el-table :data="tableData" style="width: 100%">
+              <el-table :data="collectData" style="width: 100%">
                 <el-table-column
                   align="center"
                   fixed
