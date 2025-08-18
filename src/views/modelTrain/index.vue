@@ -65,11 +65,11 @@ const config = reactive({
   trainData: "",
   type: "yolo",
   version: "YOLOv8",
-  device: "cpu",
+  device: "gpu",
   size: 640,
   batch: 16,
   lr: 0.01,
-  epoch: 1
+  epoch: 10
 });
 
 // 响应式数据
@@ -200,6 +200,13 @@ const startTraining = async () => {
     isOperationInProgress.value = false;
   }
 };
+
+// 重置表单
+const resetConfig = formEl => {
+  if (!formEl) return;
+  formEl.resetFields();
+};
+
 const stopTraining = async () => {
   if (!currentSessionId.value || isOperationInProgress.value) return;
 
@@ -851,7 +858,7 @@ const downloadFiles = async () => {
             </div>
 
             <div v-if="!apiConnected">
-              <el-button type="info" @click="checkApiConnection"
+              <el-button type="danger" plain @click="checkApiConnection"
                 >🔄 重新连接</el-button
               >
             </div>
@@ -1128,10 +1135,14 @@ const downloadFiles = async () => {
                     <div class="log-header">
                       <el-text class="mx-1" type="info">操作日志</el-text>
                       <div class="log-controls">
-                        <el-button type="info" round @click="clearLogs"
+                        <el-button type="info" round plain @click="clearLogs"
                           >🗑️ 清空</el-button
                         >
-                        <el-button type="success" round @click="exportLogs"
+                        <el-button
+                          type="success"
+                          round
+                          plain
+                          @click="exportLogs"
                           >💾 导出</el-button
                         >
                       </div>
@@ -1255,6 +1266,7 @@ const downloadFiles = async () => {
                         hasActiveTraining ||
                         isOperationInProgress
                       "
+                      plain
                       @click="startTraining"
                     >
                       {{
@@ -1265,7 +1277,7 @@ const downloadFiles = async () => {
                             : "🚀 开始训练"
                       }}
                     </el-button>
-                    <el-button type="info" @click="resetForm(formRef)"
+                    <el-button type="info" plain @click="resetConfig(formRef)"
                       >重置参数</el-button
                     >
                   </el-form-item>
