@@ -62,11 +62,13 @@ const columns = ref([]);
 const currentPage = ref(0); // 切图
 const previewUrl = ref([]);
 const fileRow = ref(null);
+const showLoading = ref(false);
+const showValRequired = ref(true);
 
 // 获取表单数据
 const getTableData = () => {
   axios
-    .get(API_URL + "/show_storage", { responseType: "text" })
+    .get(`${API_URL}/show_storage/weights,yamls`, { responseType: "text" })
     .then(res => {
       try {
         const data = JSON.parse(res.data);
@@ -79,7 +81,7 @@ const getTableData = () => {
           allData.value = data.data;
           // 待验证的模型
           weightsData.value = allData.value.filter(
-            item => item.file_comment == "upload_weight"
+            item => item.file_comment == "upload_weights"
           );
           modelOptions.value = weightsData.value.map(item => ({
             value: item.file_id,
@@ -91,7 +93,7 @@ const getTableData = () => {
 
           // 待验证的数据集文件
           dataYamlOptions.value = allData.value
-            .filter(item => item.file_comment == "upload_yaml")
+            .filter(item => item.file_comment == "upload_yamls")
             .map(item => ({
               value: item.file_id,
               label: item.file_real_name
@@ -220,12 +222,17 @@ const previewFile = async file => {
     console.log("res", res.data.data);
     valTableData.value = [res.data.data.metrics]; // 直接更新响应式变量
     previewUrl.value = res.data.data.val_images;
-    ElNotification.success({
-      title: "已存在验证结果",
-      message: "",
-      showClose: false,
-      duration: 1000
-    });
+    if (previewUrl.value.length > 0) {
+      ElNotification.success({
+        title: "已存在验证结果",
+        message: "",
+        showClose: false,
+        duration: 1000
+      });
+      showValRequired.value = false;
+    } else {
+      showValRequired.value = true;
+    }
   } catch (error) {
     console.error("预览失败:", error);
     ElMessage.error("预览失败: " + error.message);
@@ -240,6 +247,8 @@ const valWeights = async file => {
 
 const confirmDialog = async filedValues => {
   visible.value = false;
+  showLoading.value = true;
+  showValRequired.value = false;
   try {
     ElNotification.warning({
       title: "正在验证...",
@@ -265,6 +274,7 @@ const confirmDialog = async filedValues => {
     ElMessage.error("验证失败: " + error.message);
   } finally {
     getTableData();
+    showLoading.value = false;
   }
 };
 
@@ -276,12 +286,19 @@ const cancelDialog = () => {
 const downloadFiles = async file => {
   console.log("downloadFiles", file);
   let file_name = file.file_real_name;
-  let val_folder_id = file.is_detected;
-  let val_conf = val_folder_id.replace("val-folder-", "").substring(0, 4);
+  let val_conf = "0.25";
+
+  if (String(file.is_detected).includes("0.50")) {
+    val_conf = "0.50";
+  } else if (String(file.is_detected).includes("0.75")) {
+    val_conf = "0.75";
+  }
+
   try {
     await axios
-      .get(`${API_URL}/download_file/${val_folder_id}`, {
-        responseType: "blob"
+      .get(`${API_URL}/download_file/${file.file_id}`, {
+        responseType: "blob",
+        params: { val: true }
       })
       .then(({ data }) => {
         if (data.type === "application/zip") {
@@ -423,6 +440,14 @@ onMounted(() => {
         <template #paneL>
           <splitpane :splitSet="settingTB">
             <template #paneL>
+              <div class="loader" v-if="showLoading">
+                正在验证中
+                <span></span>
+              </div>
+               <div class="loader" v-if="showValRequired">
+                请点击待验证
+                <span></span>
+              </div>
               <div
                 v-if="!showType && previewUrl.length > 0"
                 class="h-full w-full bg-gray-200 flex"
@@ -716,5 +741,84 @@ code {
 
 .yaml-content::-webkit-scrollbar-thumb:hover {
   background: #718096;
+}
+
+.loader {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 150px;
+  height: 150px;
+  background: transparent;
+  border: 3px solid rgba(0, 102, 255, 0.1);
+  border-radius: 50%;
+  text-align: center;
+  line-height: 150px;
+  font-family: sans-serif;
+  font-size: 20px;
+  color: #0066ff;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  text-shadow: 0 0 10px #0066ff;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
+}
+
+.loader::before {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  width: 100%;
+  height: 100%;
+  border: 3px solid transparent;
+  border-top: 3px solid #0066ff;
+  border-right: 3px solid #0066ff;
+  border-radius: 50%;
+  animation: animateC 2s linear infinite;
+}
+
+.loader span {
+  display: block;
+  position: absolute;
+  top: calc(50% - 2px);
+  left: 50%;
+  width: 50%;
+  height: 4px;
+  background: transparent;
+  transform-origin: left;
+  animation: animate 2s linear infinite;
+}
+
+.loader span::before {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #00aeff;
+  top: -6px;
+  right: -8px;
+  box-shadow: 0 0 20px 5px #0066ff;
+}
+
+@keyframes animateC {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes animate {
+  0% {
+    transform: rotate(45deg);
+  }
+
+  100% {
+    transform: rotate(405deg);
+  }
 }
 </style>

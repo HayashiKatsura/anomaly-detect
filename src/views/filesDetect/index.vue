@@ -57,7 +57,7 @@ const modelValue = ref(""); // 先给空值
 // 获取表单数据
 const getTableData = () => {
   axios
-    .get(API_URL + "/show_storage", { responseType: "text" })
+    .get(API_URL + "/show_storage/weights,images", { responseType: "text" })
     .then(res => {
       try {
         const data = JSON.parse(res.data);
@@ -70,12 +70,12 @@ const getTableData = () => {
           allData.value = data.data;
           imagesData.value = allData.value.filter(
             item =>
-              item.file_comment == "upload_image" ||
+              item.file_comment == "upload_images" ||
               item.file_comment == "image-folder"
           );
           console.log("imagesData", imagesData.value);
           weightsData.value = allData.value.filter(
-            item => item.file_comment == "upload_weight"
+            item => item.file_comment == "upload_weights"
           );
           console.log("weightsData", weightsData.value);
           modelOptions.value = weightsData.value.map(item => ({
@@ -176,12 +176,12 @@ const previewFile = async file => {
     previewUrl.value = res.data.data.image_url; // 直接更新响应式变量
     detectUrl.value = res.data.data.detect_url; // 直接更新响应式变量
     detectTableData.value = res.data.data.detect_result; // 直接更新响应式变量
-    ElNotification.success({
-      title: "已存在检测结果",
-      message: "",
-      showClose: false,
-      duration: 1000
-    });
+    // ElNotification.success({
+    //   title: "已存在检测结果",
+    //   message: "",
+    //   showClose: false,
+    //   duration: 1000
+    // });
   } catch (error) {
     console.error("预览失败:", error);
     ElNotification.error({

@@ -33,7 +33,7 @@ defineOptions({
 
 const settingLR: ContextProps = reactive({
   minPercent: 20,
-  defaultPercent: 80,
+  defaultPercent: 70,
   split: "vertical"
 });
 
@@ -56,10 +56,64 @@ const showFlash = ref(false);
 const isUploading = ref(false);
 const error = ref("");
 const collectData = ref([]);
+const totalCollectData = ref([]);
+const allData = ref([]);
+const conf = ref(0.25);
+const modelOptions = ref([]);
+const modelValue = ref(""); // 先给空值
+const weightsData = ref([]);
+const multipleTableRef = ref(null);
+const multipleSelection = ref([]);
+const detectTableData = ref([]);
+const toBeDetectedIds = ref([]); //待检测的图像id
+const handleSelectionChange = val => {
+  multipleSelection.value = val;
+  console.log("val", val);
+  // toBeDetectedIds.value = val.map(item => item.file_id);
+  // console.log("toBeDetectedIds", toBeDetectedIds.value);
+};
 
 // 定时器
 let stream = null;
 let autoPhotoTimer = null;
+
+// 获取权重信息
+const getTableData = () => {
+  axios
+    .get(API_URL + "/show_storage/weights,cameras", { responseType: "text" })
+    .then(res => {
+      try {
+        const data = JSON.parse(res.data);
+        if (data.length === 0) {
+          allData.value = [];
+          totalCollectData.value = [];
+          return;
+        } else {
+          allData.value = data.data;
+          weightsData.value = allData.value.filter(
+            item => item.file_comment == "upload_weights"
+          );
+          console.log("weightsData", weightsData.value);
+          modelOptions.value = weightsData.value.map(item => ({
+            value: item.file_id,
+            label: item.file_real_name
+          }));
+          if (modelOptions.value.length > 0) {
+            modelValue.value = modelOptions.value[0].value;
+          }
+          totalCollectData.value = allData.value.filter(item =>
+            item.file_comment.includes("camera")
+          );
+          console.log("totalCollectData", totalCollectData.value);
+        }
+      } catch (error) {
+        console.error("解析CSV数据失败:", error);
+      }
+    })
+    .catch(error => {
+      console.error("加载CSV文件失败:", error);
+    });
+};
 
 // 开启/关闭摄像头
 const toggleCamera = async () => {
@@ -208,6 +262,7 @@ const removeImage = index => {
 
 // 清空所有图片
 const clearAllImages = () => {
+  totalCapturedImages.value -= currentCapturedImages.value.length;
   currentCapturedImages.value = [];
   collectData.value = [];
 };
@@ -231,6 +286,7 @@ const autoUploadImages = async () => {
     // 添加所有图片到FormData
     currentCapturedImages.value.forEach((image, index) => {
       formData.append("files", image.blob, `${image.file_id},${image.name}`);
+      toBeDetectedIds.value.push(image.file_id);
     });
 
     // 添加元数据
@@ -250,6 +306,8 @@ const autoUploadImages = async () => {
       showClose: false,
       duration: 1000
     });
+
+    detectFiles();
   } catch (err) {
     console.error("上传错误:", err);
     error.value = "上传失败，请稍后重试";
@@ -261,6 +319,8 @@ const autoUploadImages = async () => {
     });
   } finally {
     isUploading.value = false;
+    getTableData();
+    toBeDetectedIds.value = [];
   }
 };
 
@@ -309,6 +369,36 @@ const generateShortUuid = (index = 10) => {
   }
 };
 
+const previewFile = async file => {
+  if (String(file.file_id).includes("folder")) {
+    return;
+  }
+  // 读取图像的函数
+  try {
+    const res = await axios.get(`${API_URL}/show_image/${file.file_id}`);
+    detectTableData.value = res.data.data.detect_result; // 直接更新响应式变量
+    ElNotification.success({
+      title: "已存在检测结果",
+      message: "",
+      showClose: false,
+      duration: 1000
+    });
+  } catch (error) {
+    console.error("预览失败:", error);
+    ElNotification.error({
+      title: "检测失败",
+      message: "",
+      showClose: false,
+      duration: 1000
+    });
+  }
+};
+
+//挂载完成
+onMounted(() => {
+  getTableData();
+});
+
 // 组件卸载时清理资源
 onUnmounted(() => {
   stopCamera();
@@ -351,6 +441,79 @@ const downloadFiles = async () => {
       duration: 1000
     });
   }
+};
+
+const detectFiles = async () => {
+  let images_id = toBeDetectedIds.value.join(",");
+  ElNotification.warning({
+    title: "正在检测...",
+    message: "",
+    showClose: false,
+    duration: 1000
+  });
+  try {
+    const res = await axios.get(API_URL + "/detect_file", {
+      params: {
+        weight_id: modelValue.value,
+        conf: conf.value,
+        images_id: images_id,
+        camera:true
+      }
+    });
+
+    // // 轮询检查数据
+    // const checkData = () => {
+    //   if (res.data.data && res.data.data.length > 0) {
+    //     detectTableData.value = res.data.data;
+    //     if (!String(file.file_id).includes("folder")) {
+    //       detectUrl.value = res.data.data[0].detect_image_base64;
+    //     }
+    //   } else {
+    //     // 1s后再次检查
+    //     setTimeout(checkData, 1000);
+    //   }
+    // };
+    // checkData();
+  } catch (error) {
+    console.error("检测失败:", error.message);
+    ElNotification.error({
+      title: "检测失败",
+      message: error.message,
+      showClose: false,
+      duration: 1000
+    });
+  } finally {
+    getTableData();
+  }
+};
+
+// 添加方法来计算检测状态
+const getDetectionStatus = row => {
+  // 如果是文件夹（有 children 属性）
+  if (row.children && Array.isArray(row.children)) {
+    if (row.children.length === 0) {
+      return "📁空文件夹";
+    }
+
+    // 检查所有子文件的检测状态
+    const detectedChildren = row.children.filter(
+      child => child.is_detected && child.is_detected !== "False"
+    );
+
+    const totalChildren = row.children.length;
+    const detectedCount = detectedChildren.length;
+
+    if (detectedCount === totalChildren) {
+      return "✔已检测";
+    } else if (detectedCount === 0) {
+      return "📷待检测";
+    } else {
+      return `⏳${detectedCount}/${totalChildren}`;
+    }
+  }
+
+  // 如果是普通文件
+  return row.is_detected === "False" ? "📷待检测" : "✔已检测";
 };
 </script>
 
@@ -408,6 +571,17 @@ const downloadFiles = async () => {
               v-if="isCameraOn && photoMode === 'auto'"
               class="flex items-center space-x-2.5"
             >
+              <div v-if="currentCapturedImages.length > 0">
+                <el-button
+                  size="small"
+                  :icon="Delete"
+                  type="danger"
+                  round
+                  plain
+                  @click="clearAllImages"
+                  >清空当前照片</el-button
+                >
+              </div>
               <div>
                 <label class="text-gray-700">拍照间隔（秒）:</label>
                 <input
@@ -441,6 +615,30 @@ const downloadFiles = async () => {
                 </div>
               </div>
             </div>
+            <!-- <div>
+              <el-button type="primary" @click="detectFiles"
+                >Batch_detect_Test</el-button
+              >
+            </div> -->
+            <div class="flex items-center space-x-2">
+              <span class="block text-sm text-gray-600">模型</span>
+              <el-select
+                size="small"
+                v-model="modelValue"
+                filterable
+                clearable
+                placeholder="Select"
+                style="width: 100px"
+              >
+                <el-option
+                  style="color: hotpink"
+                  v-for="item in modelOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+            </div>
             <div class="flex items-center space-x-2">
               <span class="block text-sm text-gray-600">已拍摄</span>
               <span class="block text-lg font-semibold text-blue-600"
@@ -472,18 +670,8 @@ const downloadFiles = async () => {
                 </div>
               </el-button>
             </div>
-            <div v-if="currentCapturedImages.length > 0">
-              <el-button
-                size="small"
-                :icon="Delete"
-                type="danger"
-                round
-                plain
-                @click="clearAllImages"
-                >清空所有照片</el-button
-              >
-            </div>
-            <div v-if="isCameraOn && currentCapturedImages.length > 0">
+
+            <div v-if="isCameraOn && currentCapturedImages.length > 0 && photoMode === 'manual'">
               <el-button
                 size="small"
                 :icon="Upload"
@@ -627,42 +815,52 @@ const downloadFiles = async () => {
               <el-scrollbar>
                 <div class="dv-b">
                   <div>
-                    <el-table :data="collectData" style="width: 100%">
+                    <el-table :data="detectTableData" border stripe>
                       <el-table-column
                         align="center"
-                        type="selection"
-                        width="30"
+                        label="文件名称"
+                        prop="file_name"
+                        sortable
                       />
                       <el-table-column
                         align="center"
-                        fixed
-                        prop="date"
-                        label="采集日期"
+                        label="类别"
+                        width="100"
+                        prop="cls"
+                        sortable
                       />
                       <el-table-column
                         align="center"
-                        prop="name"
-                        label="文件名"
+                        label="置信度"
+                        width="100"
+                        prop="conf"
+                        sortable
                       />
                       <el-table-column
                         align="center"
-                        prop="status"
-                        label="检测状态"
+                        label="YOLO坐标"
+                        prop="yolo_coord"
+                        sortable
                       />
                       <el-table-column
                         align="center"
-                        label="操作"
-                        min-width="120"
-                      >
-                        <template #default>
-                          <el-button link type="primary" size="small">
-                            Detail
-                          </el-button>
-                          <el-button link type="primary" size="small"
-                            >Edit</el-button
-                          >
-                        </template>
-                      </el-table-column>
+                        label="像素坐标"
+                        prop="detect_coord"
+                        sortable
+                      />
+                      <el-table-column
+                        align="center"
+                        label="目标面积"
+                        width="150"
+                        prop="detect_area"
+                        sortable
+                      />
+                      <el-table-column
+                        align="center"
+                        label="图像尺寸"
+                        prop="image_size"
+                        sortable
+                      />
                     </el-table>
                   </div>
                 </div>
@@ -675,14 +873,50 @@ const downloadFiles = async () => {
         <template #paneR>
           <el-scrollbar>
             <div>
-              <el-table :data="collectData" style="width: 100%">
+              <el-table
+                :data="totalCollectData"
+                style="width: 100%"
+                ref="multipleTableRef"
+                row-key="file_id"
+                @row-click="previewFile"
+                @selection-change="handleSelectionChange"
+              >
+                <el-table-column align="center" type="selection" width="30" />
                 <el-table-column
                   align="center"
                   fixed
-                  prop="date"
-                  label="采集日期"
+                  prop="file_create_time"
+                  label="日期"
+                  sortable
                 />
-                <el-table-column align="center" prop="name" label="文件名" />
+                <el-table-column
+                  align="center"
+                  prop="file_real_name"
+                  label="名称"
+                  sortable
+                />
+                <el-table-column
+                  align="center"
+                  label="状态"
+                  prop="is_detected"
+                  sortable
+                >
+                  <template v-slot="scope">
+                    <span>{{ getDetectionStatus(scope.row) }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column align="center" label="查看" min-width="120">
+                  <template v-slot="scope">
+                    <el-button
+                      v-if="scope.row.is_detected"
+                      link
+                      type="primary"
+                      size="small"
+                    >
+                      点击查看细节
+                    </el-button>
+                  </template>
+                </el-table-column>
               </el-table>
             </div>
           </el-scrollbar>

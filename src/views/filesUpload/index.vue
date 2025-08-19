@@ -73,7 +73,7 @@ const closeDialog = () => {
 // 获取表单数据
 const getTableData = () => {
   axios
-    .get(API_URL + "/show_storage", { responseType: "text" })
+    .get(API_URL + "/show_storage/images", { responseType: "text" })
     .then(res => {
       try {
         const data = JSON.parse(res.data);
