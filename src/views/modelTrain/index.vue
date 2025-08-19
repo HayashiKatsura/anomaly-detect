@@ -89,6 +89,8 @@ const maxConsecutiveFailures = 50;
 const debugInfo = ref(null);
 const showDebugInfo = ref(false);
 const saveFolderId = ref(null);
+const showRequireTrain = ref(true);
+const showRequireTrainData = ref(false);
 
 // 定时器
 let statusCheckInterval = null;
@@ -189,6 +191,8 @@ const startTraining = async () => {
       addLog(`保存目录: ${result.save_dir || "默认目录"}`, "info");
 
       // 开始监控进度
+      showRequireTrain.value = false;
+      showRequireTrainData.value = true;
       startProgressMonitoring();
     } else {
       throw new Error(result.message || "启动失败");
@@ -296,6 +300,7 @@ const isTrainingCompleted = computed(() => {
 // 监听训练数据变化
 watch(currentTrainingData, newData => {
   if (newData) {
+    showRequireTrainData.value = false;
     trainingPhase.value = 3; // 进入训练阶段
     lastProgressUpdate.value = Date.now();
     consecutiveFailures.value = 0;
@@ -929,6 +934,14 @@ const downloadFiles = async () => {
                   </div>
                   <!-- <div> -->
                   <!-- 有数据时显示详细信息 -->
+                  <div v-if="showRequireTrain" class="loader">
+                    点击开始训练
+                    <span />
+                  </div>
+                   <div v-if="showRequireTrainData" class="loader">
+                    等待训练进度
+                    <span />
+                  </div>
                   <div v-if="currentTrainingData">
                     <div>
                       <!-- 进度条 -->
@@ -1595,5 +1608,85 @@ const downloadFiles = async () => {
 
 .metric.highlight span:last-child {
   color: #28a745;
+}
+
+
+.loader {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 150px;
+  height: 150px;
+  background: transparent;
+  border: 3px solid rgba(0, 102, 255, 0.1);
+  border-radius: 50%;
+  text-align: center;
+  line-height: 150px;
+  font-family: sans-serif;
+  font-size: 20px;
+  color: #0066ff;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  text-shadow: 0 0 10px #0066ff;
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
+}
+
+.loader::before {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  width: 100%;
+  height: 100%;
+  border: 3px solid transparent;
+  border-top: 3px solid #0066ff;
+  border-right: 3px solid #0066ff;
+  border-radius: 50%;
+  animation: animateC 2s linear infinite;
+}
+
+.loader span {
+  display: block;
+  position: absolute;
+  top: calc(50% - 2px);
+  left: 50%;
+  width: 50%;
+  height: 4px;
+  background: transparent;
+  transform-origin: left;
+  animation: animate 2s linear infinite;
+}
+
+.loader span::before {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #00aeff;
+  top: -6px;
+  right: -8px;
+  box-shadow: 0 0 20px 5px #0066ff;
+}
+
+@keyframes animateC {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes animate {
+  0% {
+    transform: rotate(45deg);
+  }
+
+  100% {
+    transform: rotate(405deg);
+  }
 }
 </style>
