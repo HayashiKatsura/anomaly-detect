@@ -457,7 +457,7 @@ const detectFiles = async () => {
         weight_id: modelValue.value,
         conf: conf.value,
         images_id: images_id,
-        camera:true
+        camera: true
       }
     });
 
@@ -623,17 +623,17 @@ const getDetectionStatus = row => {
             <div class="flex items-center space-x-2">
               <span class="block text-sm text-gray-600">模型</span>
               <el-select
-                size="small"
                 v-model="modelValue"
+                size="small"
                 filterable
                 clearable
                 placeholder="Select"
                 style="width: 100px"
               >
                 <el-option
-                  style="color: hotpink"
                   v-for="item in modelOptions"
                   :key="item.value"
+                  style="color: hotpink"
                   :label="item.label"
                   :value="item.value"
                 />
@@ -671,7 +671,13 @@ const getDetectionStatus = row => {
               </el-button>
             </div>
 
-            <div v-if="isCameraOn && currentCapturedImages.length > 0 && photoMode === 'manual'">
+            <div
+              v-if="
+                isCameraOn &&
+                currentCapturedImages.length > 0 &&
+                photoMode === 'manual'
+              "
+            >
               <el-button
                 size="small"
                 :icon="Upload"
@@ -874,9 +880,9 @@ const getDetectionStatus = row => {
           <el-scrollbar>
             <div>
               <el-table
+                ref="multipleTableRef"
                 :data="totalCollectData"
                 style="width: 100%"
-                ref="multipleTableRef"
                 row-key="file_id"
                 @row-click="previewFile"
                 @selection-change="handleSelectionChange"

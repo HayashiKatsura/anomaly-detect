@@ -440,13 +440,13 @@ onMounted(() => {
         <template #paneL>
           <splitpane :splitSet="settingTB">
             <template #paneL>
-              <div class="loader" v-if="showLoading">
+              <div v-if="showLoading" class="loader">
                 正在验证中
-                <span></span>
+                <span />
               </div>
-               <div class="loader" v-if="showValRequired">
+              <div v-if="showValRequired" class="loader">
                 请点击待验证
-                <span></span>
+                <span />
               </div>
               <div
                 v-if="!showType && previewUrl.length > 0"

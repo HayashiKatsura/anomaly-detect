@@ -14,9 +14,9 @@ export default {
       name: "FilesDetect",
       component: () => import("@/views/filesDetect/index.vue"),
       meta: {
-        title: "🚀 文件检测",
+        title: "🚀 文件检测"
         // showParent: true
       }
     }
   ]
-}satisfies RouteConfigsTable;
+} satisfies RouteConfigsTable;

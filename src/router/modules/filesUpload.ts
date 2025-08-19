@@ -14,9 +14,9 @@ export default {
       name: "FilesUpload",
       component: () => import("@/views/filesUpload/index.vue"),
       meta: {
-        title: "📃 文件上传",
+        title: "📃 文件上传"
         // showParent: true
       }
     }
   ]
-}satisfies RouteConfigsTable;
+} satisfies RouteConfigsTable;

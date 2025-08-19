@@ -55,7 +55,6 @@ const settingTB: ContextProps = reactive({
                 <div class="dv-c">C</div>
               </el-scrollbar>
             </template>
-            
           </splitpane>
         </template>
       </splitpane>
