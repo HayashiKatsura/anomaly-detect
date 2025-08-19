@@ -66,11 +66,39 @@ const multipleTableRef = ref(null);
 const multipleSelection = ref([]);
 const detectTableData = ref([]);
 const toBeDetectedIds = ref([]); //待检测的图像id
+const allWithoutDetections = ref([]); // 所有未检测数据
+const allWithDetections = ref([]); // 所有已检测数据
+const toBeDownloadedIds = ref([]); // 待下载的图像id
+
+// 表格选择操作
 const handleSelectionChange = val => {
   multipleSelection.value = val;
   console.log("val", val);
-  // toBeDetectedIds.value = val.map(item => item.file_id);
-  // console.log("toBeDetectedIds", toBeDetectedIds.value);
+};
+
+const toggleSelection = (rows?, ignoreSelectable?) => {
+  if (rows) {
+    console.log("rows", rows);
+    rows.forEach(row => {
+      multipleTableRef.value!.toggleRowSelection(
+        row,
+        undefined,
+        ignoreSelectable
+      );
+
+      // 有 children 就添加 children 的 file_id，否则添加当前 row 的 file_id
+      if (row.children?.length) {
+        row.children.forEach(child => {
+          toBeDownloadedIds.value.push(child.file_id);
+        });
+      } else {
+        toBeDownloadedIds.value.push(row.file_id);
+      }
+    });
+    console.log("toBeDownloadedIds", toBeDownloadedIds.value);
+  } else {
+    multipleTableRef.value!.clearSelection();
+  }
 };
 
 // 定时器
@@ -90,10 +118,12 @@ const getTableData = () => {
           return;
         } else {
           allData.value = data.data;
+
+          // 权重数据
           weightsData.value = allData.value.filter(
             item => item.file_comment == "upload_weights"
           );
-          console.log("weightsData", weightsData.value);
+          // console.log("weightsData", weightsData.value);
           modelOptions.value = weightsData.value.map(item => ({
             value: item.file_id,
             label: item.file_real_name
@@ -101,10 +131,25 @@ const getTableData = () => {
           if (modelOptions.value.length > 0) {
             modelValue.value = modelOptions.value[0].value;
           }
+
+          // 所有的采集数据
           totalCollectData.value = allData.value.filter(item =>
             item.file_comment.includes("camera")
           );
-          console.log("totalCollectData", totalCollectData.value);
+          // console.log("totalCollectData", totalCollectData.value);
+
+          allWithDetections.value = totalCollectData.value.filter(
+            item =>
+              String(item.is_detected).length > 0 && item.is_detected != "false"
+          );
+          // console.log("allWithDetections", allWithDetections.value);
+
+          allWithoutDetections.value = totalCollectData.value.filter(
+            item =>
+              String(item.is_detected).length === 0 ||
+              item.is_detected == "false"
+          );
+          // console.log("allWithoutDetections", allWithoutDetections.value);
         }
       } catch (error) {
         console.error("解析CSV数据失败:", error);
@@ -407,26 +452,26 @@ onUnmounted(() => {
 
 // 文件下载
 const downloadFiles = async () => {
+  console.log("toBeDownloadedIds", toBeDownloadedIds.value);
+  let downloadIds = toBeDownloadedIds.value.join(",");
+  let fileName = `${getFormattedTimestamp()}-${generateShortUuid()}`
   ElNotification.warning({
     title: "正在下载...",
     showClose: false,
     duration: 1000
   });
-  // let file_name = file.file_real_name;
-  let file_name = config.name;
-  console.log("saveFolderId", saveFolderId.value);
-  console.log("file_name", file_name);
 
   try {
     await axios
-      .get(`${API_URL}/download_file/${saveFolderId.value}`, {
-        responseType: "blob"
+      .get(`${API_URL}/download_file/${downloadIds}`, {
+        responseType: "blob",
+        params: {camera: true}
       })
       .then(({ data }) => {
         if (data.type === "application/zip") {
-          file_name += ".zip";
+          fileName += ".zip";
         }
-        downloadByData(data, file_name);
+        downloadByData(data, fileName);
       });
     ElNotification.success({
       title: "下载成功",
@@ -551,16 +596,64 @@ const getDetectionStatus = row => {
 
               <!-- 拍照模式选择 -->
               <div v-if="isCameraOn" class="flex items-center space-x-2">
-                <div>拍照模式</div>
-                <el-radio-group
-                  v-model="photoMode"
-                  size="small"
-                  fill="#f56c6c"
-                  @change="setPhotoMode(photoMode)"
-                >
-                  <el-radio-button label="手动拍照" value="manual" />
-                  <el-radio-button label="自动拍照" value="auto" />
-                </el-radio-group>
+                <div>
+                  <el-button
+                    v-if="currentCapturedImages.length > 0"
+                    size="small"
+                    :icon="Delete"
+                    type="danger"
+                    round
+                    plain
+                    @click="clearAllImages"
+                    >清空当前照片</el-button
+                  >
+                  <el-button
+                    v-if="
+                      isCameraOn &&
+                      currentCapturedImages.length > 0 &&
+                      photoMode === 'manual'
+                    "
+                    size="small"
+                    :icon="Upload"
+                    type="info"
+                    round
+                    plain
+                    @click="manualUpload"
+                    >上传照片
+                  </el-button>
+                  <el-button
+                    type="danger"
+                    size="small"
+                    plain
+                    round
+                    @click.stop="toggleSelection(allWithoutDetections)"
+                    >全选未检测</el-button
+                  >
+                  <el-button
+                    type="danger"
+                    size="small"
+                    plain
+                    round
+                    @click.stop="toggleSelection(allWithDetections)"
+                    >全选已检测</el-button
+                  >
+                  <el-button
+                    type="danger"
+                    size="small"
+                    plain
+                    round
+                    @click.stop="toggleSelection()"
+                    >清空选项</el-button
+                  >
+                  <el-button
+                    type="danger"
+                    size="small"
+                    plain
+                    round
+                    @click.stop="downloadFiles"
+                    >下载所选</el-button
+                  >
+                </div>
               </div>
             </div>
           </div>
@@ -571,17 +664,6 @@ const getDetectionStatus = row => {
               v-if="isCameraOn && photoMode === 'auto'"
               class="flex items-center space-x-2.5"
             >
-              <div v-if="currentCapturedImages.length > 0">
-                <el-button
-                  size="small"
-                  :icon="Delete"
-                  type="danger"
-                  round
-                  plain
-                  @click="clearAllImages"
-                  >清空当前照片</el-button
-                >
-              </div>
               <div>
                 <label class="text-gray-700">拍照间隔（秒）:</label>
                 <input
@@ -620,31 +702,19 @@ const getDetectionStatus = row => {
                 >Batch_detect_Test</el-button
               >
             </div> -->
-            <div class="flex items-center space-x-2">
-              <span class="block text-sm text-gray-600">模型</span>
-              <el-select
-                v-model="modelValue"
+            <div class="flex space-x-2" v-if="isCameraOn">
+              <span class="block text-sm text-gray-600">拍照模式</span>
+              <el-radio-group
+                v-model="photoMode"
                 size="small"
-                filterable
-                clearable
-                placeholder="Select"
-                style="width: 100px"
+                fill="#f56c6c"
+                @change="setPhotoMode(photoMode)"
               >
-                <el-option
-                  v-for="item in modelOptions"
-                  :key="item.value"
-                  style="color: hotpink"
-                  :label="item.label"
-                  :value="item.value"
-                />
-              </el-select>
+                <el-radio-button label="手动拍照" value="manual" />
+                <el-radio-button label="自动拍照" value="auto" />
+              </el-radio-group>
             </div>
-            <div class="flex items-center space-x-2">
-              <span class="block text-sm text-gray-600">已拍摄</span>
-              <span class="block text-lg font-semibold text-blue-600"
-                >{{ totalCapturedImages }} 张</span
-              >
-            </div>
+
             <!-- 手动拍照按钮 -->
             <div
               v-if="isCameraOn && photoMode === 'manual'"
@@ -658,46 +728,19 @@ const getDetectionStatus = row => {
                 @click="takePhoto"
               >
                 <div class="flex items-center space-x-2">
-                  <el-icon
-                    class="rounded-lg transition-all duration-200 transform hover:scale-120"
-                    ><Camera
-                  /></el-icon>
-                  <div
-                    class="text-black font-bold rounded-lg transition-all duration-200 transform hover:scale-120"
+                  <el-tooltip
+                    class="box-item"
+                    effect="dark"
+                    content="手动模式下，单击拍照"
+                    placement="top"
                   >
-                    拍照
-                  </div>
+                    <el-icon
+                      class="rounded-lg transition-all duration-200 transform hover:scale-120"
+                      ><Camera
+                    /></el-icon>
+                  </el-tooltip>
                 </div>
               </el-button>
-            </div>
-
-            <div
-              v-if="
-                isCameraOn &&
-                currentCapturedImages.length > 0 &&
-                photoMode === 'manual'
-              "
-            >
-              <el-button
-                size="small"
-                :icon="Upload"
-                type="info"
-                round
-                plain
-                @click="manualUpload"
-                >上传照片
-              </el-button>
-            </div>
-            <div class="flex items-center space-x-2">
-              <span class="block text-sm text-gray-600">上传状态</span>
-              <span
-                :class="[
-                  'block text-lg font-semibold',
-                  isUploading ? 'text-yellow-600' : 'text-green-600'
-                ]"
-              >
-                {{ isUploading ? "上传中..." : "就绪" }}
-              </span>
             </div>
           </div>
         </div>
@@ -725,7 +768,7 @@ const getDetectionStatus = row => {
                           playsinline
                           muted
                           loop
-                          class="w-full max-w-lg h-auto border-4 border-gray-300 rounded-lg shadow-lg"
+                          class="w-full max-w-lg h-auto border-4 border-gray-300 rounded-lg shadow-lg mirror"
                         />
 
                         <!-- 拍照提示 -->
@@ -788,26 +831,6 @@ const getDetectionStatus = row => {
                           </div>
                         </div>
                       </div>
-                    </div> -->
-
-                    <!-- 操作按钮 -->
-                    <!-- <div
-                      v-if="currentCapturedImages.length > 0"
-                      class="flex justify-center space-x-4"
-                    >
-                      <button
-                        @click="clearAllImages"
-                        class="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg transition-all duration-200"
-                      >
-                        清空所有照片
-                      </button>
-                      <button
-                        @click="manualUpload"
-                        :disabled="isUploading || currentCapturedImages.length === 0"
-                        class="px-4 py-2 bg-green-500 hover:bg-green-600 disabled:bg-gray-400 text-white rounded-lg transition-all duration-200"
-                      >
-                        手动上传照片
-                      </button>
                     </div> -->
                   </div>
 
@@ -877,55 +900,114 @@ const getDetectionStatus = row => {
 
         <!-- #paneR 表示指定该组件为右侧面板 -->
         <template #paneR>
-          <el-scrollbar>
-            <div>
-              <el-table
-                ref="multipleTableRef"
-                :data="totalCollectData"
-                style="width: 100%"
-                row-key="file_id"
-                @row-click="previewFile"
-                @selection-change="handleSelectionChange"
-              >
-                <el-table-column align="center" type="selection" width="30" />
-                <el-table-column
-                  align="center"
-                  fixed
-                  prop="file_create_time"
-                  label="日期"
-                  sortable
-                />
-                <el-table-column
-                  align="center"
-                  prop="file_real_name"
-                  label="名称"
-                  sortable
-                />
-                <el-table-column
-                  align="center"
-                  label="状态"
-                  prop="is_detected"
-                  sortable
-                >
-                  <template v-slot="scope">
-                    <span>{{ getDetectionStatus(scope.row) }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column align="center" label="查看" min-width="120">
-                  <template v-slot="scope">
-                    <el-button
-                      v-if="scope.row.is_detected"
-                      link
-                      type="primary"
-                      size="small"
+          <div class="flex flex-col h-full">
+            <div class="h-[95%]">
+              <el-scrollbar>
+                <div>
+                  <el-table
+                    ref="multipleTableRef"
+                    :data="totalCollectData"
+                    style="width: 100%"
+                    row-key="file_id"
+                    @row-click="previewFile"
+                    @selection-change="handleSelectionChange"
+                  >
+                    <el-table-column
+                      align="center"
+                      type="selection"
+                      width="30"
+                    />
+                    <el-table-column
+                      align="center"
+                      fixed
+                      prop="file_create_time"
+                      label="日期"
+                      sortable
+                    />
+                    <el-table-column
+                      align="center"
+                      prop="file_real_name"
+                      label="名称"
+                      sortable
+                    />
+                    <el-table-column
+                      align="center"
+                      label="状态"
+                      prop="is_detected"
+                      sortable
                     >
-                      点击查看细节
-                    </el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
+                      <template v-slot="scope">
+                        <span>{{ getDetectionStatus(scope.row) }}</span>
+                      </template>
+                    </el-table-column>
+                    <el-table-column
+                      align="center"
+                      label="查看"
+                      min-width="120"
+                    >
+                      <template v-slot="scope">
+                        <el-button
+                          v-if="scope.row.is_detected"
+                          link
+                          type="primary"
+                          size="small"
+                        >
+                          点击查看细节
+                        </el-button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </div>
+              </el-scrollbar>
             </div>
-          </el-scrollbar>
+            <div
+              class="h-[5%] flex justify-between items-center space-x-4 border-t border-red-200"
+            >
+              <div>
+                <!-- 模型选择 -->
+                <div class="flex items-center space-x-2">
+                  <span class="block text-sm text-gray-600">模型</span>
+                  <el-select
+                    v-model="modelValue"
+                    size="small"
+                    filterable
+                    clearable
+                    placeholder="Select"
+                    style="width: 80px"
+                  >
+                    <el-option
+                      v-for="item in modelOptions"
+                      :key="item.value"
+                      style="color: hotpink"
+                      :label="item.label"
+                      :value="item.value"
+                    />
+                  </el-select>
+                </div>
+              </div>
+              <div class="flex justify-end items-center space-x-4">
+                <!-- 采集状态 -->
+                <div class="flex items-center space-x-2">
+                  <span
+                    :class="[
+                      'block text-lg font-semibold',
+                      isUploading ? 'text-yellow-600' : 'text-green-600'
+                    ]"
+                  >
+                    {{ isUploading ? "上传中..." : "采集中..." }}
+                  </span>
+                </div>
+
+                <!-- 拍摄计数 -->
+                <div class="flex items-center space-x-2">
+                  <span class="block text-sm text-gray-600">已拍摄</span>
+                  <span class="block text-lg font-semibold text-blue-600"
+                    >{{ totalCapturedImages }} 张</span
+                  >
+                </div>
+              </div>
+            </div>
+          </div>
         </template>
       </splitpane>
     </div>
@@ -953,5 +1035,9 @@ const getDetectionStatus = row => {
     padding-top: 18vh;
     color: rgba($color: #ce272d, $alpha: 80%);
   }
+}
+
+.mirror {
+  transform: scaleX(-1);
 }
 </style>
