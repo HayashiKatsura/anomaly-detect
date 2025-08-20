@@ -448,6 +448,7 @@ onMounted(() => {
                 请点击待验证
                 <span />
               </div>
+              <!-- 大图预览模式 -->
               <div
                 v-if="!showType && previewUrl.length > 0"
                 class="h-full w-full bg-gray-200 flex"
@@ -465,7 +466,7 @@ onMounted(() => {
                     :min-scale="0.2"
                     :preview-src-list="previewUrl"
                     show-progress
-                    :initial-index="0"
+                    :initial-index="currentPage"
                     fit="contain"
                   />
                 </div>
@@ -474,6 +475,7 @@ onMounted(() => {
                   @click.stop="changePage(1)"
                 />
               </div>
+              <!-- 小图预览模式 -->
               <div
                 v-if="showType && previewUrl.length > 0"
                 class="w-full h-full grid grid-cols-6 grid-rows-2 gap-2 p-4"

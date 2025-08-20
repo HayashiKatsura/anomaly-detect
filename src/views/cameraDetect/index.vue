@@ -23,7 +23,8 @@ import {
   SetUp,
   ArrowLeft,
   ArrowRight,
-  Camera
+  Camera,
+  Picture
 } from "@element-plus/icons-vue";
 import { downloadByData } from "@pureadmin/utils";
 
@@ -454,7 +455,7 @@ onUnmounted(() => {
 const downloadFiles = async () => {
   console.log("toBeDownloadedIds", toBeDownloadedIds.value);
   let downloadIds = toBeDownloadedIds.value.join(",");
-  let fileName = `${getFormattedTimestamp()}-${generateShortUuid()}`
+  let fileName = `${getFormattedTimestamp()}-${generateShortUuid()}`;
   ElNotification.warning({
     title: "正在下载...",
     showClose: false,
@@ -465,7 +466,7 @@ const downloadFiles = async () => {
     await axios
       .get(`${API_URL}/download_file/${downloadIds}`, {
         responseType: "blob",
-        params: {camera: true}
+        params: { camera: true }
       })
       .then(({ data }) => {
         if (data.type === "application/zip") {
@@ -485,6 +486,8 @@ const downloadFiles = async () => {
       showClose: false,
       duration: 1000
     });
+  } finally {
+    toBeDownloadedIds.value = [];
   }
 };
 
@@ -572,57 +575,39 @@ const getDetectionStatus = row => {
             <div class="flex text-center space-x-4">
               <!-- 摄像头开关 -->
               <div>
-                <div v-if="!isCameraOn">
-                  <el-button
-                    size="small"
-                    type="success"
-                    round
-                    plain
-                    @click="toggleCamera"
-                    >开启摄像头</el-button
-                  >
-                </div>
-                <div v-else>
-                  <el-button
-                    size="small"
-                    type="danger"
-                    round
-                    plain
-                    @click="toggleCamera"
-                    >关闭摄像头</el-button
-                  >
+                <div v-if="isCameraOn">
+                  <el-switch
+                    v-model="isCameraOn"
+                    class="ml-2"
+                    style="
+                      --el-switch-on-color: #ff4949;
+                      --el-switch-off-color: #13ce66;
+                    "
+                    active-text="关闭摄像头"
+                    inactive-text="开启摄像头"
+                    inline-prompt
+                  />
                 </div>
               </div>
 
-              <!-- 拍照模式选择 -->
-              <div v-if="isCameraOn" class="flex items-center space-x-2">
+              <!-- 功能区 -->
+              <div class="flex items-center space-x-2">
                 <div>
                   <el-button
+                    class="rounded-lg transition-all duration-200 transform hover:scale-130"
                     v-if="currentCapturedImages.length > 0"
                     size="small"
                     :icon="Delete"
-                    type="danger"
+                    type="text"
                     round
                     plain
                     @click="clearAllImages"
                     >清空当前照片</el-button
                   >
+
                   <el-button
-                    v-if="
-                      isCameraOn &&
-                      currentCapturedImages.length > 0 &&
-                      photoMode === 'manual'
-                    "
-                    size="small"
-                    :icon="Upload"
-                    type="info"
-                    round
-                    plain
-                    @click="manualUpload"
-                    >上传照片
-                  </el-button>
-                  <el-button
-                    type="danger"
+                    class="rounded-lg transition-all duration-200 transform hover:scale-130"
+                    type="text"
                     size="small"
                     plain
                     round
@@ -630,7 +615,8 @@ const getDetectionStatus = row => {
                     >全选未检测</el-button
                   >
                   <el-button
-                    type="danger"
+                    class="rounded-lg transition-all duration-200 transform hover:scale-130"
+                    type="text"
                     size="small"
                     plain
                     round
@@ -638,7 +624,8 @@ const getDetectionStatus = row => {
                     >全选已检测</el-button
                   >
                   <el-button
-                    type="danger"
+                    class="rounded-lg transition-all duration-200 transform hover:scale-130"
+                    type="text"
                     size="small"
                     plain
                     round
@@ -646,7 +633,9 @@ const getDetectionStatus = row => {
                     >清空选项</el-button
                   >
                   <el-button
-                    type="danger"
+                    class="rounded-lg transition-all duration-200 transform hover:scale-130"
+                    :disabled="toBeDownloadedIds.length === 0"
+                    type="text"
                     size="small"
                     plain
                     round
@@ -678,7 +667,7 @@ const getDetectionStatus = row => {
                 <div v-if="!isAutoPhotoActive">
                   <el-button
                     size="small"
-                    type="success"
+                    type="primary"
                     round
                     plain
                     @click="toggleAutoPhoto"
@@ -720,6 +709,20 @@ const getDetectionStatus = row => {
               v-if="isCameraOn && photoMode === 'manual'"
               class="flex justify-center"
             >
+              <el-button
+                v-if="
+                  isCameraOn &&
+                  currentCapturedImages.length > 0 &&
+                  photoMode === 'manual'
+                "
+                size="small"
+                :icon="Upload"
+                type="info"
+                round
+                plain
+                @click="manualUpload"
+                >上传照片
+              </el-button>
               <el-button
                 type="info"
                 size="small"
@@ -782,11 +785,14 @@ const getDetectionStatus = row => {
                           v-if="!isCameraOn"
                           class="w-full max-w-lg h-64 bg-gray-200 border-4 border-gray-300 rounded-lg flex items-center justify-center"
                         >
-                          <div class="text-center text-gray-500">
+                          <div
+                            class="text-center text-gray-500 hover:cursor-pointer"
+                          >
                             <svg
-                              class="w-16 h-16 mx-auto mb-4"
+                              class="w-16 h-16 mx-auto mb-4 rounded-lg transition-all duration-200 transform hover:scale-130"
                               fill="currentColor"
                               viewBox="0 0 20 20"
+                              @click.stop="toggleCamera"
                             >
                               <path
                                 fill-rule="evenodd"
@@ -952,7 +958,8 @@ const getDetectionStatus = row => {
                           type="primary"
                           size="small"
                         >
-                          点击查看细节
+                        <el-icon><Picture /></el-icon>
+                          查看检测结果
                         </el-button>
                       </template>
                     </el-table-column>

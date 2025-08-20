@@ -69,7 +69,8 @@ const config = reactive({
   size: 640,
   batch: 16,
   lr: 0.01,
-  epoch: 10
+  epoch: 10,
+  dataset_example:'dataset'
 });
 
 // 响应式数据
@@ -261,7 +262,7 @@ const hasActiveTraining = computed(() => !!currentSessionId.value);
 const progressPercentage = computed(() => {
   if (!currentTrainingData.value) return 0;
   const { epoch, total_epochs } = currentTrainingData.value;
-  return Math.min(100, (epoch / total_epochs) * 100);
+  return Math.min(100, (epoch - 1 / total_epochs) * 100);
 });
 
 const trainingElapsedTime = computed(() => {
@@ -809,14 +810,15 @@ const downloadFiles = async () => {
     duration: 1000
   });
   // let file_name = file.file_real_name;
-  let file_name = config.name;
-  console.log("saveFolderId", saveFolderId.value);
-  console.log("file_name", file_name);
+  let file_name = config.dataset_example;
+  // console.log("saveFolderId", saveFolderId.value);
+  // console.log("file_name", file_name);
 
   try {
     await axios
-      .get(`${API_URL}/download_file/${saveFolderId.value}`, {
-        responseType: "blob"
+      .get(`${API_URL}/download_file/null`, {
+        responseType: "blob",
+        params: {dataset_example:true}
       })
       .then(({ data }) => {
         if (data.type === "application/zip") {
@@ -836,6 +838,141 @@ const downloadFiles = async () => {
       showClose: false,
       duration: 1000
     });
+  }
+};
+
+// 文件上传
+const uploadMode = ref("random");
+const selectedFolderId = ref(null);
+const dialogVisible = ref(false);
+const uploadFileList = ref([]);
+const uploading = ref(false);
+
+// 随机上传
+const openRandomUpload = () => {
+  uploadMode.value = "random";
+  selectedFolderId.value = null;
+  dialogVisible.value = true;
+};
+// 指定文件夹上传
+const openFolderUpload = row => {
+  selectedFolderId.value = row.file_id;
+  uploadMode.value = "folder";
+  selectedFolderId.value = row.file_id;
+  dialogVisible.value = true;
+};
+const closeDialog = () => {
+  uploadFileList.value = [];
+  dialogVisible.value = false;
+  uploadMode.value = "random";
+  selectedFolderId.value = null;
+};
+// 文件上传
+const submitFilesUpload = () => {
+  if (uploadFileList.value.length === 0) {
+    // ElMessage.warning("请选择要上传的文件");
+    return;
+  }
+  uploading.value = true;
+  const formData = new FormData();
+  uploadFileList.value.forEach(file => {
+    formData.append("files", file.raw);
+  });
+  ElNotification.warning({
+    title: "正在上传...",
+    message: "",
+    showClose: false,
+    duration: 1000
+  });
+
+  axios
+    .post(`${API_URL}/upload_file/${selectedFolderId.value}`, formData, {
+      headers: { "Content-Type": "multipart/form-data" }
+    })
+    .then(response => {
+      if (response.data.code === 200) {
+        dialogVisible.value = false;
+        uploadFileList.value = [];
+        // getTableData();
+        ElNotification.success({
+          title: "上传成功",
+          message: "",
+          showClose: false,
+          duration: 1000
+        });
+      } else {
+        ElNotification.error({
+          title: "上传失败",
+          message: response.data.msg,
+          showClose: false,
+          duration: 1000
+        });
+      }
+    })
+    .catch(error => {
+      console.error("上传错误:", error);
+      ElNotification.error({
+        title: "上传失败",
+        message: error.response?.data?.msg || error.message || "未知错误",
+        showClose: false,
+        duration: 1000
+      });
+    })
+    .finally(() => {
+      uploading.value = false;
+    });
+};
+
+// 文件选择变化处理
+const handleFileChangeUnified = file => {
+  // 定义允许的文件扩展名及分组
+  const allowed = {
+    archive: [".zip", ".rar", ".7z"],
+    config: [".yaml", ".yml"]
+  };
+  const fileName = file.raw.name.toLowerCase();
+  // 判断当前文件所属分组
+  let fileGroup = null;
+  for (const group in allowed) {
+    if (allowed[group].some(ext => fileName.endsWith(ext))) {
+      fileGroup = group;
+      break;
+    }
+  }
+  if (!fileGroup) {
+    ElNotification.error({
+      title: "文件类型不支持!",
+      showClose: false,
+      duration: 1000
+    });
+    uploadFileList.value.pop();
+    return;
+  }
+  // 检查上传列表中是否存在文件且类型必须一致
+  if (uploadFileList.value.length > 1) {
+    // 取第一个文件所属分组
+    const firstName = uploadFileList.value[0].raw.name.toLowerCase();
+    let firstGroup = null;
+    for (const group in allowed) {
+      if (allowed[group].some(ext => firstName.endsWith(ext))) {
+        firstGroup = group;
+        break;
+      }
+    }
+    if (firstGroup && firstGroup !== fileGroup) {
+      // ElMessage.error("一次只能上传同一类型的文件!");
+      uploadFileList.value.pop();
+      return;
+    }
+  }
+  // 累计总大小判断（单位：字节）
+  const totalSize = uploadFileList.value.reduce(
+    (sum, f) => sum + f.raw.size,
+    0
+  );
+  if (totalSize > 104857600) {
+    // ElMessage.error("总大小不能超过100MB!");
+    uploadFileList.value.pop();
   }
 };
 </script>
@@ -938,7 +1075,7 @@ const downloadFiles = async () => {
                     点击开始训练
                     <span />
                   </div>
-                   <div v-if="showRequireTrainData" class="loader">
+                  <div v-if="showRequireTrainData" class="loader">
                     等待训练进度
                     <span />
                   </div>
@@ -1185,6 +1322,47 @@ const downloadFiles = async () => {
         <!-- #paneR 表示指定该组件为右侧面板 -->
 
         <template #paneR>
+          <el-dialog
+            v-model="dialogVisible"
+            :title="uploadMode === 'folder' ? '上传到当前文件夹' : '上传数据集压缩文件'"
+            width="30%"
+            @close="closeDialog"
+          >
+            <el-upload
+              v-model:file-list="uploadFileList"
+              :auto-upload="false"
+              :on-change="handleFileChangeUnified"
+              action="#"
+              class="upload-container"
+              drag
+              multiple
+            >
+              <el-icon class="el-icon--upload">
+                <upload-filled />
+              </el-icon>
+              <div class="el-upload__text">
+                拖拽文件到此处或 <em>点击上传</em>
+              </div>
+              <template #tip>
+                <div class="el-upload__tip">
+                  支持上传zip、rar、7z压缩文件，总大小不超过100MB。
+                </div>
+              </template>
+            </el-upload>
+
+            <template #footer>
+              <span class="dialog-footer">
+                <el-button @click="closeDialog">取消</el-button>
+                <el-button
+                  :loading="uploading"
+                  type="primary"
+                  @click="submitFilesUpload"
+                >
+                  上传
+                </el-button>
+              </span>
+            </template>
+          </el-dialog>
           <el-scrollbar>
             <div class="dv-b">
               <el-card style="height: 100vh">
@@ -1211,8 +1389,23 @@ const downloadFiles = async () => {
                       <el-option label="Zone one" value="shanghai" />
                       <el-option label="Zone two" value="beijing" />
                     </el-select>
+                    <div class="flex">
+                      <el-button
+                        class="rounded-lg transition-all duration-200 transform hover:scale-130"
+                        size="small"
+                        type="text"
+                        @click.stop="openRandomUpload"
+                        >上传数据集</el-button
+                      >
+                      <el-button
+                        class="rounded-lg transition-all duration-200 transform hover:scale-130"
+                        size="small"
+                        type="text"
+                        @click.stop="downloadFiles"
+                        >下载数据集样本</el-button
+                      >
+                    </div>
                   </el-form-item>
-
                   <el-form-item label="模型类型" prop="type">
                     <el-select v-model="config.type" placeholder="选择训练模型">
                       <el-option label="YOLO" value="yolo" />
@@ -1609,7 +1802,6 @@ const downloadFiles = async () => {
 .metric.highlight span:last-child {
   color: #28a745;
 }
-
 
 .loader {
   position: absolute;
