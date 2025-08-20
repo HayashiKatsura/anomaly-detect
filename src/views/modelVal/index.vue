@@ -47,7 +47,7 @@ const weightsData = ref([]);
 const sortProp = ref("");
 const sortOrder = ref("");
 const fileName = ref("");
-const currentFile = ref(null);
+// const currentFile = ref(null);
 const valTableData = ref([]);
 const modelOptions = ref([]);
 const modelValue = ref(""); // 先给空值
@@ -212,7 +212,9 @@ const handleSortChange = column => {
 };
 
 const previewFile = async file => {
-  currentFile.value = file;
+  previewUrl.value = [];
+  currentPage.value = 0;
+  // currentFile.value = file;
   if (String(file.file_id).includes("folder")) {
     return;
   }
