@@ -81,22 +81,26 @@ const getTableData = () => {
           allData.value = data.data;
           // 待验证的模型
           weightsData.value = allData.value.filter(
-            item => item.file_comment == "upload_weights"
+            item => String(item.file_name).includes("pt") && String(item.file_id).includes("weight")
           );
+          console.log("weightsData:", weightsData.value);
+
+
           modelOptions.value = weightsData.value.map(item => ({
             value: item.file_id,
-            label: item.file_real_name
+            label: item.file_name
           }));
+
           if (modelOptions.value.length > 0) {
             modelValue.value = modelOptions.value[0].value;
           }
 
           // 待验证的数据集文件
           dataYamlOptions.value = allData.value
-            .filter(item => item.file_comment == "upload_yamls")
+            .filter(item => item.file_comment == "upload_yamls" || String(item.file_id).includes("yaml"))
             .map(item => ({
               value: item.file_id,
-              label: item.file_real_name
+              label: item.file_name
             }));
           if (dataYamlOptions.value.length > 0) {
             dataYamlId.value = dataYamlOptions.value[0].value;
@@ -153,7 +157,7 @@ const filterAndSortData = () => {
   if (fileName.value) {
     const searchTerm = fileName.value.toLowerCase();
     filtered = filtered.filter(item =>
-      item.file_real_name.toLowerCase().includes(searchTerm)
+      item.file_name.toLowerCase().includes(searchTerm)
     );
   }
 
@@ -287,7 +291,7 @@ const cancelDialog = () => {
 // 文件下载
 const downloadFiles = async file => {
   console.log("downloadFiles", file);
-  let file_name = file.file_real_name;
+  let file_name = file.file_name;
   let val_conf = "0.25";
 
   if (String(file.is_detected).includes("0.50")) {
@@ -323,7 +327,7 @@ const getDetectionStatus = row => {
 
     // 检查所有子文件的验证状态
     const detectedChildren = row.children.filter(
-      child => child.is_detected && child.is_detected !== "False"
+      child => child.is_validated && String(child.is_validated) !== "null"
     );
 
     const totalChildren = row.children.length;
@@ -339,7 +343,7 @@ const getDetectionStatus = row => {
   }
 
   // 如果是普通文件
-  return row.is_detected === "False" ? "📷待验证" : "✔已验证";
+  return String(row.is_validated) === "null" ? "📷待验证" : "✔已验证";
 };
 
 const shouldShowDownloadButton = row => {
@@ -617,13 +621,13 @@ onMounted(() => {
                     <el-table-column
                       align="center"
                       label="文件名称"
-                      prop="file_real_name"
+                      prop="file_name"
                       sortable
                     />
                     <el-table-column
                       align="center"
                       label="上传时间"
-                      prop="file_create_time"
+                      prop="create_time"
                       sortable
                     />
                     <el-table-column

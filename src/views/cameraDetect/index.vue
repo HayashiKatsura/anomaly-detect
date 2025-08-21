@@ -70,7 +70,8 @@ const toBeDetectedIds = ref([]); //待检测的图像id
 const allWithoutDetections = ref([]); // 所有未检测数据
 const allWithDetections = ref([]); // 所有已检测数据
 const toBeDownloadedIds = ref([]); // 待下载的图像id
-
+const detectUrl = ref("");
+const showDetectImage = ref(false);
 // 表格选择操作
 const handleSelectionChange = val => {
   multipleSelection.value = val;
@@ -119,10 +120,11 @@ const getTableData = () => {
           return;
         } else {
           allData.value = data.data;
+          console.log("allData", allData.value);
 
           // 权重数据
-          weightsData.value = allData.value.filter(
-            item => item.file_comment == "upload_weights"
+          weightsData.value = allData.value.filter(item =>
+            String(item.file_name).includes(".pt")
           );
           // console.log("weightsData", weightsData.value);
           modelOptions.value = weightsData.value.map(item => ({
@@ -135,20 +137,21 @@ const getTableData = () => {
 
           // 所有的采集数据
           totalCollectData.value = allData.value.filter(item =>
-            item.file_comment.includes("camera")
+            String(item.comment).includes("camera")
           );
-          // console.log("totalCollectData", totalCollectData.value);
+          console.log("totalCollectData", totalCollectData.value);
 
           allWithDetections.value = totalCollectData.value.filter(
             item =>
-              String(item.is_detected).length > 0 && item.is_detected != "false"
+              String(item.is_detected).length > 0 &&
+              String(item.is_detected) != "null"
           );
           // console.log("allWithDetections", allWithDetections.value);
 
           allWithoutDetections.value = totalCollectData.value.filter(
             item =>
               String(item.is_detected).length === 0 ||
-              item.is_detected == "false"
+              String(item.is_detected) == "null"
           );
           // console.log("allWithoutDetections", allWithoutDetections.value);
         }
@@ -270,7 +273,7 @@ const takePhoto = () => {
   }, 200);
 
   // 检查是否需要自动上传
-  if (currentCapturedImages.value.length >= 10) {
+  if (currentCapturedImages.value.length >= 3) {
     autoUploadImages();
   }
 };
@@ -343,7 +346,8 @@ const autoUploadImages = async () => {
     const response = await axios.post(`${API_URL}/upload_file/null`, formData, {
       headers: {
         "Content-Type": "multipart/form-data"
-      }
+      },
+      params: { camera: true }
     });
     // 上传成功后清空图片列表
     currentCapturedImages.value = [];
@@ -423,6 +427,8 @@ const previewFile = async file => {
   try {
     const res = await axios.get(`${API_URL}/show_image/${file.file_id}`);
     detectTableData.value = res.data.data.detect_result; // 直接更新响应式变量
+    // console.log("res", res.data.data);
+    detectUrl.value = res.data.data.detect_url; // 直接更新响应式变量
     ElNotification.success({
       title: "已存在检测结果",
       message: "",
@@ -545,7 +551,7 @@ const getDetectionStatus = row => {
 
     // 检查所有子文件的检测状态
     const detectedChildren = row.children.filter(
-      child => child.is_detected && child.is_detected !== "False"
+      child => child.is_detected && String(child.is_detected) !== "null"
     );
 
     const totalChildren = row.children.length;
@@ -561,7 +567,7 @@ const getDetectionStatus = row => {
   }
 
   // 如果是普通文件
-  return row.is_detected === "False" ? "📷待检测" : "✔已检测";
+  return String(row.is_detected) === "null" ? "📷待检测" : "✔已检测";
 };
 </script>
 
@@ -756,6 +762,35 @@ const getDetectionStatus = row => {
           <!-- 自定义左侧面板的内容 -->
           <splitpane :splitSet="settingTB">
             <template #paneL>
+              <el-dialog
+                v-model="showDetectImage"
+                title="检测结果图"
+                width="1000"
+                align-center
+              >
+                <el-image
+                    style="width: 100%; height: 100%; object-fit: contain"
+                    :src="detectUrl"
+                    :zoom-rate="1.2"
+                    :max-scale="7"
+                    :min-scale="0.2"
+                    :preview-src-list="[detectUrl]"
+                    show-progress
+                    :initial-index="0"
+                    fit="contain"
+                  />
+                <template #footer>
+                  <div class="dialog-footer">
+                    <el-button
+                      type="primary"
+                      @click="showDetectImage = false"
+                    >
+                      关闭
+                    </el-button>
+                  </div>
+                </template>
+              </el-dialog>
+
               <el-scrollbar>
                 <div class="dv-b">
                   <div
@@ -926,13 +961,13 @@ const getDetectionStatus = row => {
                     <el-table-column
                       align="center"
                       fixed
-                      prop="file_create_time"
+                      prop="create_time"
                       label="日期"
                       sortable
                     />
                     <el-table-column
                       align="center"
-                      prop="file_real_name"
+                      prop="file_name"
                       label="名称"
                       sortable
                     />
@@ -957,8 +992,9 @@ const getDetectionStatus = row => {
                           link
                           type="primary"
                           size="small"
+                          @click.stop="showDetectImage = true"
                         >
-                        <el-icon><Picture /></el-icon>
+                          <el-icon><Picture /></el-icon>
                           查看检测结果
                         </el-button>
                       </template>

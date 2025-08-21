@@ -105,7 +105,7 @@ const filterAndSortData = () => {
   if (fileName.value) {
     const searchTerm = fileName.value.toLowerCase();
     filtered = filtered.filter(item =>
-      item.file_real_name.toLowerCase().includes(searchTerm)
+      item.file_name.toLowerCase().includes(searchTerm)
     );
   }
 
@@ -275,7 +275,7 @@ const submitFilesUpload = () => {
 };
 
 const previewFile = async file => {
-  let file_name = file.file_real_name;
+  let file_name = file.file_name;
   // 获取文件扩展名并转换为小写
   fileExt.value = file_name.toLowerCase().split(".").pop();
   console.log("fileExt", fileExt.value);
@@ -320,12 +320,13 @@ const previewFile = async file => {
     }
   } else {
     // 可选：处理不支持的文件类型
-    ElNotification.info({
-      title: "不支持预览的类型",
-      message: fileExt.value,
-      showClose: false,
-      duration: 1000
-    });
+    // ElNotification.info({
+    //   title: "不支持预览的类型",
+    //   message: fileExt.value,
+    //   showClose: false,
+    //   duration: 1000
+    // });
+    return;
   }
 };
 const deleteFile = async file => {
@@ -335,12 +336,12 @@ const deleteFile = async file => {
     textContent.value = "";
     ElNotification.success({
       title: "删除成功",
-      message: "删除成功: " + file.file_real_name,
+      message: "删除成功: " + file.file_name,
       showClose: false,
       duration: 1000
     });
   } catch (error) {
-    console.error("删除失败:", file.file_real_name);
+    console.error("删除失败:", file.file_name);
     ElNotification.error({
       title: "删除失败",
       message: "删除失败: " + error.message,
@@ -359,7 +360,7 @@ const downloadFiles = async file => {
     showClose: false,
     duration: 1000
   });
-  let file_name = file.file_real_name;
+  let file_name = file.file_name;
   try {
     await axios
       .get(`${API_URL}/download_file/${file.file_id}`, {
@@ -512,32 +513,32 @@ onMounted(() => {
                     <el-table-column
                       align="center"
                       label="文件名称"
-                      prop="file_real_name"
+                      prop="file_name"
                       sortable
                     />
                     <el-table-column
                       align="center"
                       label="文件类型"
-                      prop="file_type"
+                      prop="type"
                       sortable
                     />
                     <el-table-column
                       align="center"
                       label="文件描述"
-                      prop="file_comment"
+                      prop="comment"
                       sortable
                     />
                     <el-table-column
                       align="center"
                       label="上传时间"
-                      prop="file_create_time"
+                      prop="create_time"
                       sortable
                     />
 
                     <el-table-column align="center" label="操作">
                       <template v-slot="scope">
                         <el-button
-                          v-if="scope.row.file_comment.includes('folder')"
+                          v-if="scope.row.comment.includes('folder')"
                           :icon="Upload"
                           type="default"
                           @click.stop="openFolderUpload(scope.row)"

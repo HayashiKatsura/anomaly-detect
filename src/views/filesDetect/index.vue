@@ -68,14 +68,21 @@ const getTableData = () => {
           return;
         } else {
           allData.value = data.data;
+          console.log("allData", allData.value);
+
+
           imagesData.value = allData.value.filter(
             item =>
-              item.file_comment == "upload_images" ||
-              item.file_comment == "image-folder"
+              // item.file_comment == "upload_images" ||
+            // item.file_comment == "image-folder"
+              item.comment == "upload_images" ||
+              String(item.file_id).includes("images-folder")
           );
           console.log("imagesData", imagesData.value);
           weightsData.value = allData.value.filter(
-            item => item.file_comment == "upload_weights"
+            // item => item.file_comment == "upload_weights"
+            item => String(item.file_name).includes(".pt")
+
           );
           console.log("weightsData", weightsData.value);
           modelOptions.value = weightsData.value.map(item => ({
@@ -238,8 +245,8 @@ const detectFiles = async file => {
 // TODO: 检测文件夹下载存在问题
 // 文件下载
 const downloadFiles = async file => {
-  console.log("downloadFiles", file);
-  let file_name = file.file_real_name;
+  // console.log("downloadFiles", file);
+  let file_name = file.file_name;
   ElNotification.warning({
     title: "正在下载...",
     message: "",
@@ -251,7 +258,9 @@ const downloadFiles = async file => {
       .get(`${API_URL}/download_file/${file.file_id}`, {
         responseType: "blob",
         params: {
-          detect_id: file.is_detected
+          detect_id: file.is_detected,
+          is_detected: true
+
         }
       })
       .then(({ data }) => {
@@ -280,6 +289,7 @@ const downloadFiles = async file => {
 // 添加方法来计算检测状态
 const getDetectionStatus = row => {
   // 如果是文件夹（有 children 属性）
+  // console.log("getDetectionStatus", row);
   if (row.children && Array.isArray(row.children)) {
     if (row.children.length === 0) {
       return "📁空文件夹";
@@ -287,7 +297,7 @@ const getDetectionStatus = row => {
 
     // 检查所有子文件的检测状态
     const detectedChildren = row.children.filter(
-      child => child.is_detected && child.is_detected !== "False"
+      child => child.is_detected && String(child.is_detected) !== "null"
     );
 
     const totalChildren = row.children.length;
@@ -303,7 +313,7 @@ const getDetectionStatus = row => {
   }
 
   // 如果是普通文件
-  return row.is_detected === "False" ? "📷待检测" : "✔已检测";
+  return String(row.is_detected) === "null" ? "📷待检测" : "✔已检测";
 };
 
 const shouldShowDownloadButton = row => {
@@ -411,13 +421,13 @@ onMounted(() => {
                         <el-table-column
                           align="center"
                           label="文件名称"
-                          prop="file_real_name"
+                          prop="file_name"
                           sortable
                         />
                         <el-table-column
                           align="center"
                           label="上传时间"
-                          prop="file_create_time"
+                          prop="create_time"
                           sortable
                         />
                         <el-table-column

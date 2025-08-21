@@ -69,7 +69,7 @@ const config = reactive({
   size: 640,
   batch: 16,
   lr: 0.01,
-  epoch: 10,
+  epoch: 1,
   dataset_example: "dataset"
 });
 
@@ -110,15 +110,15 @@ const getYamlsData = () => {
 
           // 数据集文件
           dataYamls.value = res
-            .filter(item => String(item.file_comment).includes("dataset"))
+            .filter(item => String(item.file_id).includes("dataset")|| String(item.file_name).includes("yaml"))
             .map(item => ({
               value: item.file_id,
-              label: item.file_real_name
+              label: item.file_name
             }));
 
           //已训练的权重文件
           trainedWeights.value = res.filter(item =>
-            String(item.file_comment).includes("weight")
+            String(item.file_name).includes(".pt") || String(item.file_id).includes("train")
           );
 
           console.log("trainedWeights", trainedWeights.value);
@@ -867,7 +867,7 @@ const downloadFiles = async (target = "example") => {
     file_name = config.name;
   } else {
     params = { train_results: true, train_id: target.file_id};
-    file_name = target.file_real_name;
+    file_name = target.file_name;
   }
 
   ElNotification.warning({
@@ -1689,13 +1689,13 @@ const changePage = op => {
                       <el-table-column
                         align="center"
                         label="项目名称"
-                        prop="file_real_name"
+                        prop="file_name"
                         sortable
                       />
                       <el-table-column
                         align="center"
                         label="完成时间"
-                        prop="file_create_time"
+                        prop="create_time"
                         sortable
                       />
                       <el-table-column align="center" label="下载结果">
