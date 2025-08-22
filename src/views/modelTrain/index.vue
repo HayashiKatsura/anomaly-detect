@@ -94,7 +94,8 @@ const showRequireTrain = ref(true);
 const showRequireTrainData = ref(false);
 const dataYamls = ref([]);
 const trainedWeights = ref([]);
-
+const showTrainedRecord = ref(false);
+const showTrainedImages = ref(false);
 // 获取表数据集信息
 const getYamlsData = () => {
   axios
@@ -110,7 +111,11 @@ const getYamlsData = () => {
 
           // 数据集文件
           dataYamls.value = res
-            .filter(item => String(item.file_id).includes("dataset")|| String(item.file_name).includes("yaml"))
+            .filter(
+              item =>
+                String(item.file_id).includes("dataset") ||
+                String(item.file_name).includes("yaml")
+            )
             .map(item => ({
               value: item.file_id,
               label: item.file_name
@@ -118,7 +123,7 @@ const getYamlsData = () => {
 
           //已训练的权重文件
           trainedWeights.value = res.filter(item =>
-            String(item.file_name).includes(".pt") || String(item.file_id).includes("train")
+            String(item.file_id).includes("train")
           );
 
           console.log("trainedWeights", trainedWeights.value);
@@ -591,7 +596,7 @@ const checkTrainingProgress = async () => {
         switch (status) {
           case "completed":
             addLog(`训练完成: ${currentSessionId.value}`, "success");
-            addLog("训练结果已自动打包压缩", "info");
+            // addLog("训练结果已自动打包压缩", "info");
             trainingPhase.value = 4;
             stopProgressMonitoring();
             break;
@@ -866,7 +871,7 @@ const downloadFiles = async (target = "example") => {
     params = { train_results: true, seesion_id: currentSessionId.value };
     file_name = config.name;
   } else {
-    params = { train_results: true, train_id: target.file_id};
+    params = { train_results: true, train_id: target.file_id };
     file_name = target.file_name;
   }
 
@@ -1054,8 +1059,9 @@ const previewFile = async file => {
         showClose: false,
         duration: 1000
       });
+      showTrainedImages.value = true;
     } else {
-      return
+      return;
     }
   } catch (error) {
     console.error("预览失败:", error);
@@ -1078,7 +1084,6 @@ const changePage = op => {
     }
   }
 };
-
 </script>
 
 <template>
@@ -1087,13 +1092,14 @@ const changePage = op => {
       <div class="card-header">
         <div class="header flex justify-between">
           <div>🎯 训练监视器</div>
-                  <!-- 切换预览模式 -->
-          <div class="hover:cursor-pointer" @click="showType = !showType">
-            <el-text v-if="previewUrl.length > 0" class="mx-1" type="warning"
-              >切换预览模式</el-text
-            >
-          </div>
+          <!-- 切换预览模式 -->
+
           <div class="status-indicators flex space-x-5">
+            <div class="hover:cursor-pointer" @click="showType = !showType">
+              <el-text v-if="previewUrl.length > 0" class="mx-1" type="warning"
+                >切换预览模式</el-text
+              >
+            </div>
             <div class="status-item" :class="{ connected: apiConnected }">
               <span class="indicator" />
               API: {{ apiConnected ? "已连接" : "未连接" }}
@@ -1127,58 +1133,6 @@ const changePage = op => {
             <template #paneL>
               <el-scrollbar>
                 <div class="dv-b">
-                  <div>
-                    <!-- 连接检测提示 -->
-                    <!-- <div v-if="!apiConnected" class="connection-warning">
-                      <div class="warning-content">
-                        <h4>无法连接到训练服务器</h4>
-
-                        <el-button
-                          type="primary"
-                          @click="checkApiConnection"
-                          :disabled="
-                            !apiConnected ||
-                            !currentSessionId ||
-                            isOperationInProgress
-                          "
-                          >{{
-                            isOperationInProgress ? "停止中..." : "⏹️ 停止训练"
-                          }}</el-button
-                        >
-                        <el-button
-                          type="primary"
-                          :disabled="isOperationInProgress"
-                          @click="refreshStatus"
-                          >🔄 刷新状态</el-button
-                        >
-                        <el-button
-                          type="primary"
-                          :disabled="!currentSessionId || isOperationInProgress"
-                          @click="forceCsvScan"
-                          >📁 重新扫描CSV</el-button
-                        >
-
-                        <el-button
-                          type="primary"
-                          :disabled="
-                            !currentSessionId ||
-                            isOperationInProgress ||
-                            !isTrainingCompleted
-                          "
-                          @click="zipTrainingResults"
-                        >
-                          📦 下载训练结果
-                        </el-button>
-                        <el-button
-                          type="primary"
-                          :disabled="isOperationInProgress"
-                          @click="resetTraining"
-                        >
-                          🔄 重置
-                        </el-button>
-                      </div>
-                    </div> -->
-                  </div>
                   <!-- <div> -->
                   <!-- 有数据时显示详细信息 -->
                   <div v-if="showRequireTrain" class="loader">
@@ -1389,56 +1343,56 @@ const changePage = op => {
                       </div>
                     </div>
                   </div>
-                                <!-- 大图预览模式 -->
-              <div
-                v-if="!showType && previewUrl.length > 0"
-                class="h-full w-full bg-gray-200 flex"
-              >
-                <div
-                  class="w-[5%] hover:bg-white hover:cursor-pointer"
-                  @click.stop="changePage(-1)"
-                />
-                <div class="w-[90%]">
-                  <el-image
-                    style="width: 100%; height: 100%; object-fit: contain"
-                    :src="previewUrl[currentPage]"
-                    :zoom-rate="1.2"
-                    :max-scale="7"
-                    :min-scale="0.2"
-                    :preview-src-list="previewUrl"
-                    show-progress
-                    :initial-index="currentPage"
-                    fit="contain"
-                  />
-                </div>
-                <div
-                  class="w-[5%] hover:bg-white hover:cursor-pointer"
-                  @click.stop="changePage(1)"
-                />
-              </div>
-              <!-- 小图预览模式 -->
-              <div
-                v-if="showType && previewUrl.length > 0"
-                class="w-full h-full grid grid-cols-6 grid-rows-2 gap-2 p-4"
-              >
-                <div
-                  v-for="(item, index) in previewUrl"
-                  :key="index"
-                  class="relative overflow-hidden rounded-lg border border-gray-200"
-                >
-                  <el-image
-                    class="w-full h-full object-cover"
-                    :src="item"
-                    :zoom-rate="1.2"
-                    :max-scale="7"
-                    :min-scale="0.2"
-                    :preview-src-list="previewUrl"
-                    :show-progress="true"
-                    :initial-index="index"
-                    fit="cover"
-                  />
-                </div>
-              </div>
+                  <!-- 大图预览模式 -->
+                  <div
+                    v-if="!showType && previewUrl.length > 0"
+                    class="h-full w-full bg-gray-200 flex"
+                  >
+                    <div
+                      class="w-[5%] hover:bg-white hover:cursor-pointer"
+                      @click.stop="changePage(-1)"
+                    />
+                    <div class="w-[90%]">
+                      <el-image
+                        style="width: 100%; height: 100%; object-fit: contain"
+                        :src="previewUrl[currentPage]"
+                        :zoom-rate="1.2"
+                        :max-scale="7"
+                        :min-scale="0.2"
+                        :preview-src-list="previewUrl"
+                        show-progress
+                        :initial-index="currentPage"
+                        fit="contain"
+                      />
+                    </div>
+                    <div
+                      class="w-[5%] hover:bg-white hover:cursor-pointer"
+                      @click.stop="changePage(1)"
+                    />
+                  </div>
+                  <!-- 小图预览模式 -->
+                  <div
+                    v-if="showType && previewUrl.length > 0"
+                    class="w-full h-full grid grid-cols-6 grid-rows-2 gap-2 p-4"
+                  >
+                    <div
+                      v-for="(item, index) in previewUrl"
+                      :key="index"
+                      class="relative overflow-hidden rounded-lg border border-gray-200"
+                    >
+                      <el-image
+                        class="w-full h-full object-cover"
+                        :src="item"
+                        :zoom-rate="1.2"
+                        :max-scale="7"
+                        :min-scale="0.2"
+                        :preview-src-list="previewUrl"
+                        :show-progress="true"
+                        :initial-index="index"
+                        fit="cover"
+                      />
+                    </div>
+                  </div>
                 </div>
               </el-scrollbar>
             </template>
@@ -1488,6 +1442,7 @@ const changePage = op => {
         <!-- #paneR 表示指定该组件为右侧面板 -->
 
         <template #paneR>
+          <!-- 文件上传 -->
           <el-dialog
             v-model="dialogVisible"
             :title="
@@ -1533,187 +1488,273 @@ const changePage = op => {
               </span>
             </template>
           </el-dialog>
-          <!-- backup_point -->
-          <div class="dv-b flex flex-col h-full">
-            <div class="h-[60%]">
-              <el-scrollbar>
-                <div class="dv-b">
-                  <el-card style="height: 100vh">
-                    <el-form
-                      ref="formRef"
-                      style="max-width: 600px"
-                      :model="config"
-                      label-width="auto"
-                      class="demo-config"
-                    >
-                      <el-form-item>
+
+          <!-- 训练记录展示 -->
+          <el-dialog
+            v-model="showTrainedRecord"
+            title="训练记录"
+            width="1000"
+            align-center
+          >
+            <el-scrollbar>
+              <div class="dv-b">
+                <el-card>
+                  <el-table
+                    :data="trainedWeights"
+                    row-key="file_id"
+                    border
+                    stripe
+                    default-expand-all
+                    @row-click="previewFile"
+                  >
+                    <el-table-column
+                      align="center"
+                      label="项目名称"
+                      prop="file_name"
+                      sortable
+                    />
+                    <el-table-column
+                      align="center"
+                      label="完成时间"
+                      prop="create_time"
+                      sortable
+                    />
+                    <el-table-column align="center" label="下载结果">
+                      <template v-slot="scope">
                         <el-button
-                          type="success"
-                          :disabled="
-                            !apiConnected ||
-                            hasActiveTraining ||
-                            isOperationInProgress
-                          "
-                          plain
-                          @click="startTraining"
+                          :icon="Download"
+                          type="default"
+                          @click.stop="downloadFiles(scope.row)"
                         >
-                          {{
-                            hasActiveTraining
-                              ? "训练进行中..."
-                              : isOperationInProgress
-                                ? "启动中..."
-                                : "🚀 开始训练"
-                          }}
+                          下载
                         </el-button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </el-card>
+              </div>
+            </el-scrollbar>
+
+            <template #footer>
+              <div class="dialog-footer">
+                <el-button type="primary" @click="showTrainedRecord = false">
+                  关闭
+                </el-button>
+              </div>
+            </template>
+          </el-dialog>
+
+          <!-- 训练结果示意图 -->
+          <el-dialog v-model="showTrainedImages" width="1000" align-center>
+            <div class="hover:cursor-pointer flex justify-start" @click="showType = !showType">
+              <el-text v-if="previewUrl.length > 0" class="mx-1" type="warning"
+                >切换预览模式</el-text
+              >
+            </div>
+            <!-- 大图预览模式 -->
+            <div
+              v-if="!showType && previewUrl.length > 0"
+              class="h-full w-full bg-gray-200 flex"
+            >
+              <div
+                class="w-[5%] hover:bg-white hover:cursor-pointer"
+                @click.stop="changePage(-1)"
+              />
+              <div class="w-[90%]">
+                <el-image
+                  style="width: 100%; height: 100%; object-fit: contain"
+                  :src="previewUrl[currentPage]"
+                  :zoom-rate="1.2"
+                  :max-scale="7"
+                  :min-scale="0.2"
+                  :preview-src-list="previewUrl"
+                  show-progress
+                  :initial-index="currentPage"
+                  fit="contain"
+                />
+              </div>
+              <div
+                class="w-[5%] hover:bg-white hover:cursor-pointer"
+                @click.stop="changePage(1)"
+              />
+            </div>
+            <!-- 小图预览模式 -->
+            <div
+              v-if="showType && previewUrl.length > 0"
+              class="w-full h-full grid grid-cols-6 grid-rows-2 gap-2 p-4"
+            >
+              <div
+                v-for="(item, index) in previewUrl"
+                :key="index"
+                class="relative overflow-hidden rounded-lg border border-gray-200"
+              >
+                <el-image
+                  class="w-full h-full object-cover"
+                  :src="item"
+                  :zoom-rate="1.2"
+                  :max-scale="7"
+                  :min-scale="0.2"
+                  :preview-src-list="previewUrl"
+                  :show-progress="true"
+                  :initial-index="index"
+                  fit="cover"
+                />
+              </div>
+            </div>
+
+            <template #footer>
+              <div class="dialog-footer">
+                <el-button type="primary" @click="showTrainedImages = false">
+                  关闭
+                </el-button>
+              </div>
+            </template>
+          </el-dialog>
+
+          <div class="dv-b flex flex-col h-full">
+            <el-scrollbar>
+              <div class="dv-b">
+                <el-card style="height: 100vh">
+                  <el-form
+                    ref="formRef"
+                    style="max-width: 600px"
+                    :model="config"
+                    label-width="auto"
+                    class="demo-config"
+                  >
+                    <el-form-item>
+                      <el-button
+                        type="success"
+                        :disabled="
+                          !apiConnected ||
+                          hasActiveTraining ||
+                          isOperationInProgress
+                        "
+                        plain
+                        @click.stop="startTraining"
+                      >
+                        {{
+                          hasActiveTraining
+                            ? "训练进行中..."
+                            : isOperationInProgress
+                              ? "启动中..."
+                              : "🚀 开始训练"
+                        }}
+                      </el-button>
+                      <el-button
+                        type="info"
+                        plain
+                        @click.stop="resetConfig(formRef)"
+                        >重置参数</el-button
+                      >
+                      <el-button
+                        type="info"
+                        plain
+                        @click.stop="showTrainedRecord = true"
+                        >训练记录</el-button
+                      >
+                    </el-form-item>
+                    <el-form-item label="项目名称" prop="name">
+                      <el-input
+                        v-model.number="config.name"
+                        type="text"
+                        autocomplete="off"
+                      />
+                    </el-form-item>
+                    <el-form-item label="数据集" prop="trainData">
+                      <el-select
+                        v-model="config.trainData"
+                        placeholder="请选择或上传数据集"
+                      >
+                        <el-option
+                          v-for="(item, index) in dataYamls"
+                          :key="index"
+                          :label="item.label"
+                          :value="item.value"
+                        />
+                      </el-select>
+                      <div class="flex">
                         <el-button
-                          type="info"
-                          plain
-                          @click="resetConfig(formRef)"
-                          >重置参数</el-button
-                        >
-                      </el-form-item>
-                      <el-form-item label="项目名称" prop="name">
-                        <el-input
-                          v-model.number="config.name"
+                          class="rounded-lg transition-all duration-200 transform hover:scale-130"
+                          size="small"
                           type="text"
-                          autocomplete="off"
-                        />
-                      </el-form-item>
-                      <el-form-item label="数据集" prop="trainData">
-                        <el-select
-                          v-model="config.trainData"
-                          placeholder="请选择或上传数据集"
+                          @click.stop="openRandomUpload"
+                          >上传数据集</el-button
                         >
-                          <el-option
-                            v-for="(item, index) in dataYamls"
-                            :key="index"
-                            :label="item.label"
-                            :value="item.value"
-                          />
-                        </el-select>
-                        <div class="flex">
-                          <el-button
-                            class="rounded-lg transition-all duration-200 transform hover:scale-130"
-                            size="small"
-                            type="text"
-                            @click.stop="openRandomUpload"
-                            >上传数据集</el-button
-                          >
-                          <el-button
-                            class="rounded-lg transition-all duration-200 transform hover:scale-130"
-                            size="small"
-                            type="text"
-                            @click.stop="downloadFiles('example')"
-                            >下载数据集样本</el-button
-                          >
-                        </div>
-                      </el-form-item>
-                      <el-form-item label="模型类型" prop="type">
-                        <el-select
-                          v-model="config.type"
-                          placeholder="选择训练模型"
-                        >
-                          <el-option label="YOLO" value="yolo" />
-                          <el-option label="RT-DETR" value="detr" />
-                        </el-select>
-                      </el-form-item>
-
-                      <el-form-item label="版本" prop="version">
-                        <el-select
-                          v-model="config.version"
-                          placeholder="选择训练版本"
-                        >
-                          <el-option label="YOLOv8" value="YOLOv8" />
-                          <el-option label="YOLOv11" value="YOLOv11" />
-                          <el-option label="YOLOv12" value="YOLOv12" />
-                          <el-option label="ChipsYOLO" value="ChipsYOLO" />
-                        </el-select>
-                      </el-form-item>
-
-                      <el-form-item label="训练设备" prop="device">
-                        <el-select
-                          v-model="config.device"
-                          placeholder="选择训练设备"
-                        >
-                          <el-option label="CPU" value="cpu" />
-                          <el-option label="GPU" value="gpu" />
-                        </el-select>
-                      </el-form-item>
-
-                      <el-form-item label="图像尺寸" prop="size">
-                        <el-input
-                          v-model.number="config.size"
+                        <el-button
+                          class="rounded-lg transition-all duration-200 transform hover:scale-130"
+                          size="small"
                           type="text"
-                          placeholder="请输入图像尺寸"
-                        />
-                      </el-form-item>
+                          @click.stop="downloadFiles('example')"
+                          >下载数据集样本</el-button
+                        >
+                      </div>
+                    </el-form-item>
+                    <el-form-item label="模型类型" prop="type">
+                      <el-select
+                        v-model="config.type"
+                        placeholder="选择训练模型"
+                      >
+                        <el-option label="YOLO" value="yolo" />
+                        <el-option label="RT-DETR" value="detr" />
+                      </el-select>
+                    </el-form-item>
 
-                      <el-form-item label="批次大小" prop="batch">
-                        <el-input
-                          v-model.number="config.batch"
-                          placeholder="请输入批次大小"
-                        />
-                      </el-form-item>
+                    <el-form-item label="版本" prop="version">
+                      <el-select
+                        v-model="config.version"
+                        placeholder="选择训练版本"
+                      >
+                        <el-option label="YOLOv8" value="YOLOv8" />
+                        <el-option label="YOLOv11" value="YOLOv11" />
+                        <el-option label="YOLOv12" value="YOLOv12" />
+                        <el-option label="ChipsYOLO" value="ChipsYOLO" />
+                      </el-select>
+                    </el-form-item>
 
-                      <el-form-item label="学习率" prop="lr">
-                        <el-input
-                          v-model.number="config.lr"
-                          placeholder="请输入学习率"
-                        />
-                      </el-form-item>
+                    <el-form-item label="训练设备" prop="device">
+                      <el-select
+                        v-model="config.device"
+                        placeholder="选择训练设备"
+                      >
+                        <el-option label="CPU" value="cpu" />
+                        <el-option label="GPU" value="gpu" />
+                      </el-select>
+                    </el-form-item>
 
-                      <el-form-item label="训练次数" prop="epoch">
-                        <el-input
-                          v-model.number="config.epoch"
-                          placeholder="请输入训练次数"
-                        />
-                      </el-form-item>
-                      <!-- @click="submitForm(formRef)" -->
-                    </el-form>
-                  </el-card>
-                </div>
-              </el-scrollbar>
-            </div>
-            <div calss="h-[40%]">
-              <el-scrollbar>
-                <div class="dv-b">
-                  <el-card>
-                    <el-table
-                      :data="trainedWeights"
-                      row-key="file_id"
-                      border
-                      stripe
-                      default-expand-all
-                      @row-click="previewFile"
-                    >
-                      <el-table-column
-                        align="center"
-                        label="项目名称"
-                        prop="file_name"
-                        sortable
+                    <el-form-item label="图像尺寸" prop="size">
+                      <el-input
+                        v-model.number="config.size"
+                        type="text"
+                        placeholder="请输入图像尺寸"
                       />
-                      <el-table-column
-                        align="center"
-                        label="完成时间"
-                        prop="create_time"
-                        sortable
+                    </el-form-item>
+
+                    <el-form-item label="批次大小" prop="batch">
+                      <el-input
+                        v-model.number="config.batch"
+                        placeholder="请输入批次大小"
                       />
-                      <el-table-column align="center" label="下载结果">
-                        <template v-slot="scope">
-                          <el-button
-                            :icon="Download"
-                            type="default"
-                            @click.stop="downloadFiles(scope.row)"
-                          >
-                            下载
-                          </el-button>
-                        </template>
-                      </el-table-column>
-                    </el-table>
-                  </el-card>
-                </div>
-              </el-scrollbar>
-            </div>
+                    </el-form-item>
+
+                    <el-form-item label="学习率" prop="lr">
+                      <el-input
+                        v-model.number="config.lr"
+                        placeholder="请输入学习率"
+                      />
+                    </el-form-item>
+
+                    <el-form-item label="训练次数" prop="epoch">
+                      <el-input
+                        v-model.number="config.epoch"
+                        placeholder="请输入训练次数"
+                      />
+                    </el-form-item>
+                    <!-- @click="submitForm(formRef)" -->
+                  </el-form>
+                </el-card>
+              </div>
+            </el-scrollbar>
           </div>
         </template>
       </splitpane>
@@ -1821,7 +1862,9 @@ const changePage = op => {
 }
 
 .log-container {
-  height: 280px;
+  text-align: start;
+  // height: 280px;
+  height: 100%;
   padding: 20px;
   overflow-y: auto;
   font-family: "JetBrains Mono", "Courier New", monospace;

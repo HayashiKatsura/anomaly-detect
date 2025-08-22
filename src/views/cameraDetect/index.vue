@@ -137,7 +137,7 @@ const getTableData = () => {
 
           // 所有的采集数据
           totalCollectData.value = allData.value.filter(item =>
-            String(item.comment).includes("camera")
+            String(item.comment).includes("camera") || String(item.file_id).includes("camera")
           );
           console.log("totalCollectData", totalCollectData.value);
 
@@ -273,7 +273,7 @@ const takePhoto = () => {
   }, 200);
 
   // 检查是否需要自动上传
-  if (currentCapturedImages.value.length >= 3) {
+  if (currentCapturedImages.value.length >= 10) {
     autoUploadImages();
   }
 };
