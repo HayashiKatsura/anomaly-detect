@@ -31,8 +31,8 @@ defineOptions({
 });
 
 const settingLR: ContextProps = reactive({
-  minPercent: 20,
-  defaultPercent: 80,
+  minPercent: 25,
+  defaultPercent: 75,
   split: "vertical"
 });
 
@@ -64,7 +64,7 @@ const config = reactive({
   name: "1",
   trainData: "",
   type: "yolo",
-  version: "YOLOv8",
+  version: "ChipsYOLO",
   device: "gpu",
   size: 640,
   batch: 16,
@@ -92,10 +92,14 @@ const showDebugInfo = ref(false);
 const saveFolderId = ref(null);
 const showRequireTrain = ref(true);
 const showRequireTrainData = ref(false);
-const dataYamls = ref([]);
+const datasetsList = ref([]); // 所有的数据集
+const datasetsOptions = ref([]); // 可选择的数据集
+const targetDataset = ref(null); // 指定目标数据集
 const trainedWeights = ref([]);
 const showTrainedRecord = ref(false);
 const showTrainedImages = ref(false);
+const showDatasetsSupplement = ref(false);
+
 // 获取表数据集信息
 const getYamlsData = () => {
   axios
@@ -110,16 +114,32 @@ const getYamlsData = () => {
           // console.log("res", res);
 
           // 数据集文件
-          dataYamls.value = res
-            .filter(
-              item =>
-                String(item.file_id).includes("dataset") ||
-                String(item.file_name).includes("yaml")
-            )
-            .map(item => ({
-              value: item.file_id,
-              label: item.file_name
-            }));
+          // datasetsOptions.value = res
+          //   .filter(
+          //     item =>
+          //       String(item.file_id).includes("dataset") ||
+          //       String(item.file_id).includes("yaml")
+          //   )
+          //   .map(item => ({
+          //     value: item.file_id,
+          //     label: item.file_name
+          //   }));
+
+          datasetsList.value = res.filter(
+            item =>
+              String(item.file_id).includes("dataset") ||
+              String(item.file_id).includes("yaml")
+          );
+          console.log("datasetsList.value: ", datasetsList.value);
+
+          datasetsOptions.value = datasetsList.value.map(item => ({
+            value: item.file_id,
+            label: item.file_name
+          }));
+
+          console.log("datasetsOptions.value: ", datasetsOptions.value);
+
+          // console.log("res", res);
 
           //已训练的权重文件
           trainedWeights.value = res.filter(item =>
@@ -128,11 +148,11 @@ const getYamlsData = () => {
 
           console.log("trainedWeights", trainedWeights.value);
 
-          if (dataYamls.value.length > 0) {
+          if (datasetsOptions.value.length > 0) {
             // dataYamlId.value = config.trainData[0].value;
-            // selectedValue.value = dataYamls.value[0].value;
+            // selectedValue.value = datasetsOptions.value[0].value;
             // console.log("selectedValue", selectedValue.value);
-            config.trainData = dataYamls.value[0].value;
+            config.trainData = datasetsOptions.value[0].value;
           }
         }
       } catch (error) {
@@ -910,26 +930,28 @@ const downloadFiles = async (target = "example") => {
 // 文件上传
 const uploadMode = ref("random");
 const selectedFolderId = ref(null);
-const dialogVisible = ref(false);
+const showFileUpload = ref(false);
 const uploadFileList = ref([]);
 const uploading = ref(false);
 
 // 随机上传
-const openRandomUpload = () => {
+const openRandomUpload = (file_id = null) => {
+  console.log('scope.row: ', file_id);
   uploadMode.value = "random";
   selectedFolderId.value = null;
-  dialogVisible.value = true;
+  showFileUpload.value = true;
+  targetDataset.value = file_id;
 };
 // 指定文件夹上传
 const openFolderUpload = row => {
   selectedFolderId.value = row.file_id;
   uploadMode.value = "folder";
   selectedFolderId.value = row.file_id;
-  dialogVisible.value = true;
+  showFileUpload.value = true;
 };
 const closeDialog = () => {
   uploadFileList.value = [];
-  dialogVisible.value = false;
+  showFileUpload.value = false;
   uploadMode.value = "random";
   selectedFolderId.value = null;
 };
@@ -950,14 +972,18 @@ const submitFilesUpload = () => {
     showClose: false,
     duration: 1000
   });
+  const targetFolderId = selectedFolderId.value ? selectedFolderId.value : targetDataset.value;
+  console.log('targetDataset.value: ', targetDataset.value);
+  console.log('selectedFolderId.value: ', selectedFolderId.value);
+  console.log('targetFolderId: ', targetFolderId);
 
   axios
-    .post(`${API_URL}/upload_file/${selectedFolderId.value}`, formData, {
+    .post(`${API_URL}/upload_file/${targetFolderId}`, formData, {
       headers: { "Content-Type": "multipart/form-data" }
     })
     .then(response => {
       if (response.data.code === 200) {
-        dialogVisible.value = false;
+        showFileUpload.value = false;
         uploadFileList.value = [];
         // getTableData();
         ElNotification.success({
@@ -1444,7 +1470,7 @@ const changePage = op => {
         <template #paneR>
           <!-- 文件上传 -->
           <el-dialog
-            v-model="dialogVisible"
+            v-model="showFileUpload"
             :title="
               uploadMode === 'folder'
                 ? '上传到当前文件夹'
@@ -1495,6 +1521,9 @@ const changePage = op => {
             title="训练记录"
             width="1000"
             align-center
+            close-on-press-escape
+            close-on-click-modal
+            draggable
           >
             <el-scrollbar>
               <div class="dv-b">
@@ -1544,9 +1573,96 @@ const changePage = op => {
             </template>
           </el-dialog>
 
+          <!-- 数据集补充 -->
+          <el-dialog
+            v-model="showDatasetsSupplement"
+            title="数据集详情"
+            width="75%"
+            align-center
+            close-on-press-escape
+            close-on-click-modal
+            draggable
+          >
+            <el-scrollbar>
+              <div class="dv-b">
+                <el-card>
+                  <el-table
+                    :data="datasetsList"
+                    row-key="file_id"
+                    border
+                    stripe
+                    default-expand-all
+                    @row-click="previewFile"
+                  >
+                    <el-table-column
+                      align="center"
+                      label="数据集名称"
+                      prop="file_name"
+                      sortable
+                    >
+                      <template v-slot="scope">
+                          <span>{{String(scope.row.file_name).includes(".")? String(scope.row.file_name).split(".")[0] : scope.row.file_name}}</span>
+                      </template>
+                    </el-table-column>
+                     <el-table-column
+                      align="center"
+                      label="训练集数量"
+                      prop="last_train_counts"
+                      sortable
+                    />
+                    <el-table-column
+                      align="center"
+                      label="当前训练集数量"
+                      prop="train_counts"
+                      sortable
+                    />
+                     <el-table-column
+                      align="center"
+                      label="验证集数量"
+                      prop="last_val_counts"
+                      sortable
+                    />
+                    <el-table-column
+                      align="center"
+                      label="当前验证集数量"
+                      prop="val_counts"
+                      sortable
+                    />
+                    <el-table-column
+                      align="center"
+                      label="创建时间"
+                      prop="create_time"
+                      sortable
+                    />
+                    <el-table-column
+                      align="center"
+                      label="更新时间"
+                      prop="update_time"
+                      sortable
+                    />
+                    <el-table-column align="center" label="上传新数据">
+                      <template v-slot="scope">
+                        <el-button
+                          :icon="Upload"
+                          type="default"
+                          @click.stop="openRandomUpload(scope.row?.file_id)"
+                        >
+                          上传
+                        </el-button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </el-card>
+              </div>
+            </el-scrollbar>
+          </el-dialog>
+
           <!-- 训练结果示意图 -->
           <el-dialog v-model="showTrainedImages" width="1000" align-center>
-            <div class="hover:cursor-pointer flex justify-start" @click="showType = !showType">
+            <div
+              class="hover:cursor-pointer flex justify-start"
+              @click="showType = !showType"
+            >
               <el-text v-if="previewUrl.length > 0" class="mx-1" type="warning"
                 >切换预览模式</el-text
               >
@@ -1667,7 +1783,7 @@ const changePage = op => {
                         placeholder="请选择或上传数据集"
                       >
                         <el-option
-                          v-for="(item, index) in dataYamls"
+                          v-for="(item, index) in datasetsOptions"
                           :key="index"
                           :label="item.label"
                           :value="item.value"
@@ -1678,14 +1794,24 @@ const changePage = op => {
                           class="rounded-lg transition-all duration-200 transform hover:scale-130"
                           size="small"
                           type="text"
-                          @click.stop="openRandomUpload"
+                          style="font-size: 10"
+                          @click.stop="openRandomUpload(null)"
                           >上传数据集</el-button
                         >
                         <el-button
                           class="rounded-lg transition-all duration-200 transform hover:scale-130"
                           size="small"
                           type="text"
+                          @click.stop="showDatasetsSupplement = true"
+                          style="font-size: 10"
+                          >数据集补充</el-button
+                        >
+                        <el-button
+                          class="rounded-lg transition-all duration-200 transform hover:scale-130"
+                          size="small"
+                          type="text"
                           @click.stop="downloadFiles('example')"
+                          style="font-size: 10"
                           >下载数据集样本</el-button
                         >
                       </div>

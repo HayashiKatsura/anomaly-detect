@@ -18,10 +18,10 @@ const { isDark } = useDark();
 let curWeek = ref(1); // 0上周、1本周
 const optionsBasis: Array<OptionsType> = [
   {
-    label: "上周"
+    label: "昨日"
   },
   {
-    label: "本周"
+    label: "今日"
   }
 ];
 </script>
@@ -109,13 +109,13 @@ const optionsBasis: Array<OptionsType> = [
       >
         <el-card class="bar-card" shadow="never">
           <div class="flex justify-between">
-            <span class="text-md font-medium">分析概览</span>
+            <span class="text-md font-medium">日检测异常数量</span>
             <Segmented v-model="curWeek" :options="optionsBasis" />
           </div>
           <div class="flex justify-between items-start mt-3">
             <ChartBar
-              :requireData="barChartData[curWeek].requireData"
-              :questionData="barChartData[curWeek].questionData"
+              :anomaliesData="barChartData[curWeek].anomaliesData"
+              :normalData="barChartData[curWeek].normalData"
             />
           </div>
         </el-card>
@@ -140,7 +140,7 @@ const optionsBasis: Array<OptionsType> = [
       >
         <el-card shadow="never">
           <div class="flex justify-between">
-            <span class="text-md font-medium">解决概率</span>
+            <span class="text-md font-medium">类别占比</span>
           </div>
           <div
             v-for="(item, index) in progressData"
@@ -162,7 +162,7 @@ const optionsBasis: Array<OptionsType> = [
               :duration="item.duration"
             />
             <span class="text-nowrap ml-2 text-text_color_regular text-sm">
-              {{ item.week }}
+              {{ item.type }}
             </span>
           </div>
         </el-card>
@@ -210,9 +210,10 @@ const optionsBasis: Array<OptionsType> = [
           }
         }"
       >
+      <!-- 消息展示 -->
         <el-card shadow="never">
           <div class="flex justify-between">
-            <span class="text-md font-medium">最新动态</span>
+            <span class="text-md font-medium">消息</span>
           </div>
           <el-scrollbar max-height="504" class="mt-3">
             <el-timeline>
@@ -234,7 +235,7 @@ const optionsBasis: Array<OptionsType> = [
               >
                 <p class="text-text_color_regular text-sm">
                   {{
-                    `新增 ${item.requiredNumber} 条问题，${item.resolveNumber} 条已解决`
+                    `采集 ${item.requiredNumber} 张样本，${item.resolveNumber} 张已检测`
                   }}
                 </p>
               </el-timeline-item>
@@ -250,12 +251,12 @@ const optionsBasis: Array<OptionsType> = [
 :deep(.el-card) {
   --el-card-border-color: none;
 
-  /* 解决概率进度条宽度 */
+  /* 类别占比进度条宽度 */
   .el-progress--line {
     width: 85%;
   }
 
-  /* 解决概率进度条字体大小 */
+  /* 类别占比进度条字体大小 */
   .el-progress-bar__innerText {
     font-size: 15px;
   }

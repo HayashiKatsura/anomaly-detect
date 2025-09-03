@@ -10,9 +10,9 @@ export default defineFakeRoute([
         return {
           success: true,
           data: {
-            avatar: "https://avatars.githubusercontent.com/u/44761321",
+            avatar: "https://fuss10.elemecdn.com/e/5d/4a731a90594a4af544c0c25941171jpeg.jpeg",
             username: "admin",
-            nickname: "小铭",
+            nickname: "ZJUTD513",
             // 一个用户可能有多个角色
             roles: ["admin"],
             // 按钮级别权限
@@ -26,9 +26,9 @@ export default defineFakeRoute([
         return {
           success: true,
           data: {
-            avatar: "https://avatars.githubusercontent.com/u/52823142",
+            avatar: "https://fuss10.elemecdn.com/e/5d/4a731a90594a4af544c0c25941171jpeg.jpeg",
             username: "common",
-            nickname: "小林",
+            nickname: "ZJUTD513",
             roles: ["common"],
             permissions: ["permission:btn:add", "permission:btn:edit"],
             accessToken: "eyJhbGciOiJIUzUxMiJ9.common",

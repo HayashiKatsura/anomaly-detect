@@ -9,10 +9,10 @@ export default defineFakeRoute([
     response: ({ body }) => {
       let list = [
         {
-          avatar: "https://avatars.githubusercontent.com/u/44761321",
+          avatar: "https://fuss10.elemecdn.com/e/5d/4a731a90594a4af544c0c25941171jpeg.jpeg",
           username: "admin",
-          nickname: "小铭",
-          phone: "15888886789",
+          nickname: "ZJUTD513",
+          phone: "",
           email: faker.internet.email(),
           sex: 0,
           id: 1,
@@ -27,10 +27,10 @@ export default defineFakeRoute([
           createTime: 1605456000000
         },
         {
-          avatar: "https://avatars.githubusercontent.com/u/52823142",
+          avatar: "https://fuss10.elemecdn.com/e/5d/4a731a90594a4af544c0c25941171jpeg.jpeg",
           username: "common",
-          nickname: "小林",
-          phone: "18288882345",
+          nickname: "ZJUTD513",
+          phone: "",
           email: faker.internet.email(),
           sex: 1,
           id: 2,

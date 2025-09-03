@@ -3,11 +3,11 @@ import { useDark, useECharts } from "@pureadmin/utils";
 import { type PropType, ref, computed, watch, nextTick } from "vue";
 
 const props = defineProps({
-  requireData: {
+  anomaliesData: {
     type: Array as PropType<Array<number>>,
     default: () => []
   },
-  questionData: {
+  normalData: {
     type: Array as PropType<Array<number>>,
     default: () => []
   }
@@ -41,7 +41,7 @@ watch(
         right: 0
       },
       legend: {
-        data: ["需求人数", "提问数量"],
+        data: ["异常数量", "无异常数量"], // 柱状图下方图例
         textStyle: {
           color: "#606266",
           fontSize: "0.875rem"
@@ -74,24 +74,24 @@ watch(
       ],
       series: [
         {
-          name: "需求人数",
+          name: "异常数量", // 柱状图内部图例
           type: "bar",
           barWidth: 10,
           itemStyle: {
             color: "#41b6ff",
             borderRadius: [10, 10, 0, 0]
           },
-          data: props.requireData
+          data: props.anomaliesData
         },
         {
-          name: "提问数量",
+          name: "无异常数量",
           type: "bar",
           barWidth: 10,
           itemStyle: {
             color: "#e86033ce",
             borderRadius: [10, 10, 0, 0]
           },
-          data: props.questionData
+          data: props.normalData
         }
       ]
     });

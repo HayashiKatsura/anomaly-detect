@@ -6,6 +6,7 @@ import ThumbUp from "~icons/ri/thumb-up-line";
 import Hearts from "~icons/ri/hearts-line";
 import Empty from "./empty.svg?component";
 
+// 数据统计看板
 export function useColumns() {
   const dataList = ref([]);
   const loading = ref(true);
@@ -17,8 +18,8 @@ export function useColumns() {
     },
     {
       sortable: true,
-      label: "需求人数",
-      prop: "requiredNumber",
+      label: "文件名",
+      prop: "fileName",
       filterMultiple: false,
       filterClassName: "pure-table-filter",
       filters: [
@@ -33,30 +34,13 @@ export function useColumns() {
     },
     {
       sortable: true,
-      label: "提问数量",
-      prop: "questionNumber"
+      label: "异常数量",
+      prop: "anomaliesCount"
     },
     {
       sortable: true,
-      label: "解决数量",
-      prop: "resolveNumber"
-    },
-    {
-      sortable: true,
-      label: "用户满意度",
-      minWidth: 100,
-      prop: "satisfaction",
-      cellRenderer: ({ row }) => (
-        <div class="flex justify-center w-full">
-          <span class="flex items-center w-[60px]">
-            <span class="ml-auto mr-2">{row.satisfaction}%</span>
-            <iconifyIconOffline
-              icon={row.satisfaction > 98 ? Hearts : ThumbUp}
-              color="#e85f33"
-            />
-          </span>
-        </div>
-      )
+      label: "最多异常类别",
+      prop: "type"
     },
     {
       sortable: true,

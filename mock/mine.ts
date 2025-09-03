@@ -10,12 +10,12 @@ export default defineFakeRoute([
       return {
         success: true,
         data: {
-          avatar: "https://avatars.githubusercontent.com/u/44761321",
-          username: "admin",
-          nickname: "小铭",
-          email: "pureadmin@163.com",
-          phone: "15888886789",
-          description: "一个热爱开源的前端工程师"
+          avatar: "https://fuss10.elemecdn.com/e/5d/4a731a90594a4af544c0c25941171jpeg.jpeg",
+          username: "admin", // 个人信息
+          nickname: "ZJUTD513",
+          email: "",
+          phone: "",
+          description: ""
         }
       };
     }
