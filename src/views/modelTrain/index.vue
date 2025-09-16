@@ -37,8 +37,8 @@ const settingLR: ContextProps = reactive({
 });
 
 const settingTB: ContextProps = reactive({
-  minPercent: 20,
-  defaultPercent: 80,
+  minPercent: 35,
+  defaultPercent: 65,
   split: "horizontal"
 });
 
@@ -76,11 +76,33 @@ const config = reactive({
 // 响应式数据
 const apiConnected = ref(false);
 const monitoringActive = ref(false);
-
-const currentSessionId = ref(null); // 上一次训练的结果
-const nextSessionId = ref(null); // 下一次训练的结果
-
+const currentSessionId = ref(null);
 const currentTrainingData = ref(null);
+
+// const currentTrainingData = ref({
+//   epoch: 2,
+//   learning_rate: 0.00008,
+//   metrics: {
+//     mAP50: 0,
+//     mAP50_95: 0,
+//     precision: 0,
+//     recall: 0
+//   },
+//   timestamp: 1758020144.812673,
+//   total_epochs: 1,
+//   train_losses: {
+//     box_loss: 5.95661,
+//     cls_loss: 17.7157,
+//     obj_loss: 17.7157,
+//     total_loss: 41.388009999999994
+//   },
+//   val_losses: {
+//     box_loss: 5.95722,
+//     cls_loss: 9.64222,
+//     obj_loss: 9.64222,
+//     total_loss: 25.241660000000003
+//   }
+// });
 const sessionStartTime = ref(null);
 const logs = ref([]);
 const logContainer = ref(null);
@@ -223,8 +245,7 @@ const startTraining = async () => {
   //   addLog("请填写完整的训练配置", "error");
   //   return;
   // }
-  currentTrainingData.value = null;
-  logs.value = [];
+
   if (isOperationInProgress.value) {
     addLog("操作正在进行中，请稍候", "warning");
     return;
@@ -260,12 +281,11 @@ const startTraining = async () => {
 
     if (result.success) {
       currentSessionId.value = result.session_id;
-      nextSessionId.value = currentSessionId.value;
       sessionStartTime.value = Date.now() / 1000;
       trainingPhase.value = 2;
 
       addLog(`训练启动成功，会话ID: ${result.session_id}`, "success");
-      // addLog(`保存目录: ${result.save_dir || "默认目录"}`, "info");
+      addLog(`保存目录: ${result.save_dir || "默认目录"}`, "info");
 
       // 开始监控进度
       showRequireTrain.value = false;
@@ -334,7 +354,12 @@ const stopTraining = async () => {
 };
 
 // 计算属性
-const hasActiveTraining = computed(() => !!nextSessionId.value);
+const hasActiveTraining = computed(() => !!currentSessionId.value);
+
+// 用 !! 包裹后，结果一定是 true 或 false：
+// 如果 currentSessionId.value 有有效值 → !! 变成 true
+// 如果是空的（null、undefined、0、""）→ !! 变成 false
+
 const progressPercentage = computed(() => {
   if (!currentTrainingData.value) return 0;
   const { epoch, total_epochs } = currentTrainingData.value;
@@ -382,7 +407,7 @@ watch(currentTrainingData, newData => {
     lastProgressUpdate.value = Date.now();
     consecutiveFailures.value = 0;
     addLog(
-      `进度更新: Epoch ${newData.epoch-1}, mAP50: ${(newData.metrics.mAP50 * 100).toFixed(1)}%`,
+      `进度更新: Epoch ${newData.epoch}, mAP50: ${(newData.metrics.mAP50 * 100).toFixed(1)}%`,
       "success"
     );
   }
@@ -591,6 +616,10 @@ const checkTrainingProgress = async () => {
 
       if (progressResult.success && progressResult.data) {
         currentTrainingData.value = progressResult.data;
+        console.log(
+          "TCL: checkTrainingProgress -> progressResult.data",
+          progressResult.data
+        );
 
         lastProgressUpdate.value = Date.now();
         consecutiveFailures.value = 0;
@@ -620,7 +649,6 @@ const checkTrainingProgress = async () => {
 
         switch (status) {
           case "completed":
-            nextSessionId.value = false;
             addLog(`训练完成: ${currentSessionId.value}`, "success");
             // addLog("训练结果已自动打包压缩", "info");
             trainingPhase.value = 4;
@@ -896,9 +924,6 @@ const downloadFiles = async (target = "example") => {
   } else if (target === "train_results") {
     params = { train_results: true, seesion_id: currentSessionId.value };
     file_name = config.name;
-  } else if (target === "train_log") {
-    params = { train_log: true, seesion_id: currentSessionId.value };
-    file_name = config.name;
   } else {
     params = { train_results: true, train_id: target.file_id };
     file_name = target.file_name;
@@ -945,7 +970,7 @@ const uploading = ref(false);
 
 // 随机上传
 const openRandomUpload = (file_id = null) => {
-  console.log('scope.row: ', file_id);
+  console.log("scope.row: ", file_id);
   uploadMode.value = "random";
   selectedFolderId.value = null;
   showFileUpload.value = true;
@@ -981,10 +1006,12 @@ const submitFilesUpload = () => {
     showClose: false,
     duration: 1000
   });
-  const targetFolderId = selectedFolderId.value ? selectedFolderId.value : targetDataset.value;
-  console.log('targetDataset.value: ', targetDataset.value);
-  console.log('selectedFolderId.value: ', selectedFolderId.value);
-  console.log('targetFolderId: ', targetFolderId);
+  const targetFolderId = selectedFolderId.value
+    ? selectedFolderId.value
+    : targetDataset.value;
+  console.log("targetDataset.value: ", targetDataset.value);
+  console.log("selectedFolderId.value: ", selectedFolderId.value);
+  console.log("targetFolderId: ", targetFolderId);
 
   axios
     .post(`${API_URL}/upload_file/${targetFolderId}`, formData, {
@@ -1178,6 +1205,7 @@ const changePage = op => {
                     等待训练进度
                     <span />
                   </div>
+
                   <div v-if="currentTrainingData">
                     <div>
                       <!-- 进度条 -->
@@ -1224,6 +1252,44 @@ const changePage = op => {
 
                       <!-- 指标卡片 -->
                       <div class="metrics-grid">
+                        <div class="metric-card">
+                          <h4>📊 评估指标</h4>
+                          <div class="metrics">
+                            <div class="metric">
+                              <span>Precision:</span>
+                              <span>{{
+                                formatPercentage(
+                                  currentTrainingData.metrics.precision
+                                )
+                              }}</span>
+                            </div>
+                            <div class="metric">
+                              <span>Recall:</span>
+                              <span>{{
+                                formatPercentage(
+                                  currentTrainingData.metrics.recall
+                                )
+                              }}</span>
+                            </div>
+                            <div class="metric highlight">
+                              <span>mAP@0.5:</span>
+                              <span>{{
+                                formatPercentage(
+                                  currentTrainingData.metrics.mAP50
+                                )
+                              }}</span>
+                            </div>
+                            <div class="metric highlight">
+                              <span>mAP@0.5:0.95:</span>
+                              <span>{{
+                                formatPercentage(
+                                  currentTrainingData.metrics.mAP50_95
+                                )
+                              }}</span>
+                            </div>
+                          </div>
+                        </div>
+
                         <div class="metric-card">
                           <h4>🔥 训练损失</h4>
                           <div class="metrics">
@@ -1294,44 +1360,6 @@ const changePage = op => {
                               <span>{{
                                 formatNumber(
                                   currentTrainingData.val_losses.total_loss
-                                )
-                              }}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div class="metric-card">
-                          <h4>📊 评估指标</h4>
-                          <div class="metrics">
-                            <div class="metric">
-                              <span>Precision:</span>
-                              <span>{{
-                                formatPercentage(
-                                  currentTrainingData.metrics.precision
-                                )
-                              }}</span>
-                            </div>
-                            <div class="metric">
-                              <span>Recall:</span>
-                              <span>{{
-                                formatPercentage(
-                                  currentTrainingData.metrics.recall
-                                )
-                              }}</span>
-                            </div>
-                            <div class="metric highlight">
-                              <span>mAP@0.5:</span>
-                              <span>{{
-                                formatPercentage(
-                                  currentTrainingData.metrics.mAP50
-                                )
-                              }}</span>
-                            </div>
-                            <div class="metric highlight">
-                              <span>mAP@0.5:0.95:</span>
-                              <span>{{
-                                formatPercentage(
-                                  currentTrainingData.metrics.mAP50_95
                                 )
                               }}</span>
                             </div>
@@ -1447,7 +1475,7 @@ const changePage = op => {
                           type="success"
                           round
                           plain
-                          @click="downloadFiles('train_log')"
+                          @click="exportLogs"
                           >💾 导出</el-button
                         >
                       </div>
@@ -1610,10 +1638,14 @@ const changePage = op => {
                       sortable
                     >
                       <template v-slot="scope">
-                          <span>{{String(scope.row.file_name).includes(".")? String(scope.row.file_name).split(".")[0] : scope.row.file_name}}</span>
+                        <span>{{
+                          String(scope.row.file_name).includes(".")
+                            ? String(scope.row.file_name).split(".")[0]
+                            : scope.row.file_name
+                        }}</span>
                       </template>
                     </el-table-column>
-                     <el-table-column
+                    <el-table-column
                       align="center"
                       label="训练集数量"
                       prop="last_train_counts"
@@ -1625,7 +1657,7 @@ const changePage = op => {
                       prop="train_counts"
                       sortable
                     />
-                     <el-table-column
+                    <el-table-column
                       align="center"
                       label="验证集数量"
                       prop="last_val_counts"
@@ -1748,7 +1780,7 @@ const changePage = op => {
                     class="demo-config"
                   >
                     <el-form-item>
-                      <!-- <el-button
+                      <el-button
                         type="success"
                         :disabled="
                           !apiConnected ||
@@ -1764,27 +1796,8 @@ const changePage = op => {
                             : isOperationInProgress
                               ? "启动中..."
                               : "🚀 开始训练"
-                        }} -->
-                        <el-button
-                        v-if="!hasActiveTraining"
-                        type="success"
-                        :disabled="!apiConnected"
-                        plain
-                        @click.stop="startTraining"
-                        >
-                        {{ "🚀 开始训练"}}
+                        }}
                       </el-button>
-                      <el-button
-                        v-else-if="hasActiveTraining"
-                        type="danger"
-                        :disabled="true"
-                        plain
-                        >
-                        {{ "训练进行中..."}}
-                      </el-button>
-
-
-
                       <el-button
                         type="info"
                         plain
@@ -2018,7 +2031,8 @@ const changePage = op => {
 .log-container {
   text-align: start;
   // height: 280px;
-  height: 100%;
+  // height: 100%;
+  height: 1000px;
   padding: 20px;
   overflow-y: auto;
   font-family: "JetBrains Mono", "Courier New", monospace;
@@ -2166,7 +2180,7 @@ const changePage = op => {
 }
 
 .metrics-grid {
-  display: grid;
+  // display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 25px;
 }
