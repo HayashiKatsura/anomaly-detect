@@ -5,7 +5,7 @@ export default {
   path: "/cameraDetect",
   redirect: "/cameraDetect/index",
   meta: {
-    title: "🚀 摄像头检测",
+    title: "🚀 拍照检测",
     rank: cameraDetect
   },
   children: [
@@ -14,7 +14,7 @@ export default {
       name: "cameraDetect",
       component: () => import("@/views/cameraDetect/index.vue"),
       meta: {
-        title: "🚀 摄像头检测"
+        title: "🚀 拍照检测"
         // showParent: true
       }
     }

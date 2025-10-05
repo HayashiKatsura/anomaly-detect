@@ -32,6 +32,8 @@ export default ({ mode }: ConfigEnv): UserConfigExport => {
       }
     },
     plugins: getPluginsList(VITE_CDN, VITE_COMPRESSION),
+    // 确保正确处理 .onnx 文件
+    assetsInclude: ['**/*.onnx'],
     // https://cn.vitejs.dev/config/dep-optimization-options.html#dep-optimization-options
     optimizeDeps: {
       include,

@@ -81,6 +81,7 @@
     "mitt": "^3.0.1",
     "mqtt": "4.3.7",
     "nprogress": "^0.2.0",
+    "onnxruntime-web": "1.17.0",
     "path-browserify": "^1.0.1",
     "pinia": "^3.0.3",
     "pinyin-pro": "^3.26.0",
