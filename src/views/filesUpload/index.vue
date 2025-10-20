@@ -170,7 +170,8 @@ const handleFileChangeUnified = file => {
     weight: [".pt"],
     image: [".png", ".jpg", ".jpeg"],
     archive: [".zip", ".rar", ".7z"],
-    config: [".yaml", ".yml"]
+    config: [".yaml", ".yml"],
+    video:[".mp4",".mkv",".avi",".mov"]
   };
   const fileName = file.raw.name.toLowerCase();
   // 判断当前文件所属分组

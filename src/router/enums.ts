@@ -6,7 +6,8 @@ const home = 0, // 平台规定只有 home 路由的 rank 才能为 0 ，所以�
   filesDetect = 3,
   cameraDetect = 4,
   modelVal = 5,
-  videoDetect = 6
+  videoDetect = 6,
+  videoDetect2 = 7
 
 export {
   home,
@@ -15,5 +16,6 @@ export {
   filesDetect,
   cameraDetect,
   modelVal,
-  videoDetect
+  videoDetect,
+  videoDetect2
 };

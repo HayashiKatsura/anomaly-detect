@@ -5,7 +5,7 @@ export default {
   path: "/videoDetect",
   redirect: "/videoDetect/index",
   meta: {
-    title: "🚀 视频检测",
+    title: "🚀 实时检测",
     rank: videoDetect
   },
   children: [
@@ -14,7 +14,7 @@ export default {
       name: "videoDetect",
       component: () => import("@/views/videoDetect/index.vue"),
       meta: {
-        title: "🚀 视频检测"
+        title: "🚀 实时检测"
         // showParent: true
       }
     }
