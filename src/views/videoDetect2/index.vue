@@ -22,14 +22,14 @@ defineOptions({
 });
 
 const settingLR: ContextProps = reactive({
-  minPercent: 20,
-  defaultPercent: 80,
+  minPercent: 50,
+  defaultPercent: 50,
   split: "vertical"
 });
 
 const settingTB: ContextProps = reactive({
   minPercent: 20,
-  defaultPercent: 50,
+  defaultPercent: 30,
   split: "horizontal"
 });
 
@@ -313,7 +313,7 @@ const detectFiles = async file => {
 };
 // TODO: 检测文件夹下载存在问题
 // 文件下载
-const downloadFiles = async (file,only_video_csv=false) => {
+const downloadFiles = async (file, only_video_csv = false) => {
   // console.log("downloadFiles", file);
   let file_name = file.file_name;
   if (only_video_csv) {
@@ -466,14 +466,14 @@ onMounted(() => {
           >
         </div>
         <!-- 2. 检测进度区 -->
-        <div>
+        <!-- <div>
           <div v-if="isProcessing" class="card progress-card">
             <el-progress :percentage="progress" stroke-width="6"></el-progress>
             <p class="progress-text">
               处理进度：{{ progress }}%（请勿刷新页面）
             </p>
           </div>
-        </div>
+        </div> -->
       </div>
     </template>
 
@@ -528,21 +528,21 @@ onMounted(() => {
                         </el-table-column>
                         <el-table-column align="center" label="下载结果">
                           <template v-slot="scope">
-                            <el-button
+                            <!-- <el-button
                               v-if="shouldShowDownloadButton(scope.row)"
                               :icon="Download"
                               type="default"
-                              @click.stop="downloadFiles(scope.row,false)"
+                              @click.stop="downloadFiles(scope.row, false)"
                             >
                               下载结果
-                            </el-button>
+                            </el-button> -->
                             <el-button
                               v-if="shouldShowDownloadButton(scope.row)"
                               :icon="Download"
                               type="default"
-                              @click.stop="downloadFiles(scope.row,true)"
+                              @click.stop="downloadFiles(scope.row, true)"
                             >
-                              仅下载表格
+                              下载结果表格
                             </el-button>
                           </template>
                         </el-table-column>
@@ -615,43 +615,21 @@ onMounted(() => {
 
         <!-- #paneR 展示面板 -->
         <template #paneR>
-          <splitpane :splitSet="settingTB">
-            <template #paneL>
-              <el-scrollbar>
-                <div class="dv-a">
-                  <!-- 原始视频播放器 -->
-                  <div class="video-section">
-                    <div v-if="currentVideoUrl" class="video-player">
-                      <video
-                        :key="currentVideoUrl"
-                        :src="currentVideoUrl"
-                        controls
-                        @error="onVideoError"
-                      />
-                    </div>
-                  </div>
+          <el-scrollbar>
+            <div class="dv-a">
+              <!-- 检测后视频播放器 -->
+              <div class="video-section">
+                <div v-if="currentDetectedVideoUrl" class="video-player">
+                  <video
+                    :key="currentDetectedVideoUrl"
+                    :src="currentDetectedVideoUrl"
+                    controls
+                    @error="onVideoError"
+                  />
                 </div>
-              </el-scrollbar>
-            </template>
-
-            <template #paneR>
-              <el-scrollbar>
-                <div class="dv-a">
-                  <!-- 检测后视频播放器 -->
-                  <div class="video-section">
-                    <div v-if="currentDetectedVideoUrl" class="video-player">
-                      <video
-                        :key="currentDetectedVideoUrl"
-                        :src="currentDetectedVideoUrl"
-                        controls
-                        @error="onVideoError"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </el-scrollbar>
-            </template>
-          </splitpane>
+              </div>
+            </div>
+          </el-scrollbar>
         </template>
       </splitpane>
     </div>
