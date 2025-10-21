@@ -53,6 +53,11 @@ const conf = ref(0.25);
 const detectTableData = ref([]);
 const modelOptions = ref([]);
 const modelValue = ref(""); // 先给空值
+const isDetected = ref(false);
+
+const isProcessing = ref(true);
+const progress = ref(0);
+const progressTimer = ref(null); // 用于存储定时器
 
 // 视频相关
 // const videos = ref([])
@@ -60,8 +65,9 @@ const modelValue = ref(""); // 先给空值
 const videoPlayer = ref(null);
 const videoDuration = ref(0);
 
-const showVideoDialog = ref(false);
 const currentVideoUrl = ref("");
+const currentDetectedVideoUrl = ref("");
+
 // 视频加载完成
 const onVideoLoaded = () => {
   if (videoPlayer.value) {
@@ -208,8 +214,28 @@ const previewFile = async file => {
   // 读取图像的函数
   try {
     // const res = await axios.get(`${API_URL}/show_image/${file.file_id}`);
-    currentVideoUrl.value = `${API_URL}/show_image/${file.file_id}`;
-    showVideoDialog.value = true;
+    currentVideoUrl.value = `${API_URL}/show_image/${file.file_id}/video`;
+
+    const detectRes = await axios.get(
+      `${API_URL}/valid_params/${file.file_id}`
+    );
+    if (detectRes.data.data.file_id) {
+      currentDetectedVideoUrl.value = `${API_URL}/show_image/${file.file_id}/detectVideo`;
+
+      // 轮询检查数据
+      const checkData = () => {
+        if (
+          detectRes.data.data.detect_table &&
+          detectRes.data.data.detect_table.length > 0
+        ) {
+          detectTableData.value = detectRes.data.data.detect_table;
+        } else {
+          // 1s后再次检查
+          setTimeout(checkData, 1000);
+        }
+      };
+      checkData();
+    }
   } catch (error) {
     console.error("预览失败:", error);
     ElNotification.error({
@@ -237,20 +263,42 @@ const detectFiles = async file => {
       }
     });
 
-    // 轮询检查数据
-    const checkData = () => {
-      if (res.data.data && res.data.data.length > 0) {
-        detectTableData.value = res.data.data;
-        if (!String(file.file_id).includes("folder")) {
-          detectUrl.value = res.data.data[0].detect_image_base64;
-        }
-      } else {
-        // 1s后再次检查
-        setTimeout(checkData, 1000);
-      }
-    };
+    isProcessing.value = true;
+    progress.value = 0;
 
-    checkData();
+    // 清除可能存在的旧定时器
+    if (progressTimer.value) clearInterval(progressTimer.value);
+
+    // 轮询进度
+    // progressTimer.value = setInterval(async () => {
+    //   try {
+    //     const progressRes = await axios.get(API_URL+"/api/progress/"+taskId.value);
+
+    //     if (progressRes.data.code === 200) {
+    //       progress.value = progressRes.data.progress;
+
+    //       // 进度100%时，获取结果视频URL并停止轮询
+    //       if (progress.value === 100) {
+    //         clearInterval(progressTimer.value);
+    //         isProcessing.value = false;
+    //         resultUrl.value = API_URL+"/api/result/"+taskId.value
+    //        // resultUrl.value = `${API_URL}/api/result/${taskId.value}`;
+    //         ElMessage.success("检测完成！");
+    //       }
+    //       console.log("url:"+resultUrl.value);
+    //       // 处理错误状态
+    //       if (progress.value === -1) {
+    //         clearInterval(progressTimer.value);
+    //         isProcessing.value = false;
+    //         ElMessage.error("检测过程中发生错误");
+    //       }
+    //     }
+    //   } catch (err) {
+    //     clearInterval(progressTimer.value);
+    //     isProcessing.value = false;
+    //     ElMessage.error(`获取进度失败：${err.message}`);
+    //   }
+    // }, 1000);
   } catch (error) {
     console.error("检测失败:", error.message);
     ElNotification.error({
@@ -265,9 +313,13 @@ const detectFiles = async file => {
 };
 // TODO: 检测文件夹下载存在问题
 // 文件下载
-const downloadFiles = async file => {
+const downloadFiles = async (file,only_video_csv=false) => {
   // console.log("downloadFiles", file);
   let file_name = file.file_name;
+  if (only_video_csv) {
+    file_name += "detected.csv";
+  }
+
   ElNotification.warning({
     title: "正在下载...",
     message: "",
@@ -279,8 +331,8 @@ const downloadFiles = async file => {
       .get(`${API_URL}/download_file/${file.file_id}`, {
         responseType: "blob",
         params: {
-          detect_id: file.is_detected,
-          is_detected: true
+          file_id: file.file_id,
+          only_video_csv: only_video_csv
         }
       })
       .then(({ data }) => {
@@ -413,6 +465,15 @@ onMounted(() => {
             >搜索</el-button
           >
         </div>
+        <!-- 2. 检测进度区 -->
+        <div>
+          <div v-if="isProcessing" class="card progress-card">
+            <el-progress :percentage="progress" stroke-width="6"></el-progress>
+            <p class="progress-text">
+              处理进度：{{ progress }}%（请勿刷新页面）
+            </p>
+          </div>
+        </div>
       </div>
     </template>
 
@@ -471,9 +532,17 @@ onMounted(() => {
                               v-if="shouldShowDownloadButton(scope.row)"
                               :icon="Download"
                               type="default"
-                              @click.stop="downloadFiles(scope.row)"
+                              @click.stop="downloadFiles(scope.row,false)"
                             >
-                              下载
+                              下载结果
+                            </el-button>
+                            <el-button
+                              v-if="shouldShowDownloadButton(scope.row)"
+                              :icon="Download"
+                              type="default"
+                              @click.stop="downloadFiles(scope.row,true)"
+                            >
+                              仅下载表格
                             </el-button>
                           </template>
                         </el-table-column>
@@ -500,47 +569,39 @@ onMounted(() => {
                       >
                         <el-table-column
                           align="center"
-                          label="文件名称"
-                          prop="file_name"
+                          label="目标段ID"
+                          prop="seg_id"
                           sortable
                         />
                         <el-table-column
                           align="center"
-                          label="类别"
-                          width="100"
-                          prop="cls"
+                          label="目标类别"
+                          prop="class"
                           sortable
                         />
                         <el-table-column
                           align="center"
-                          label="置信度"
-                          width="100"
-                          prop="conf"
+                          label="中间帧时间"
+                          prop="mid_frame_time"
                           sortable
                         />
                         <el-table-column
                           align="center"
-                          label="YOLO坐标"
-                          prop="yolo_coord"
+                          label="中间帧索引"
+                          prop="mid_frame_idx"
                           sortable
                         />
                         <el-table-column
                           align="center"
-                          label="像素坐标"
-                          prop="detect_coord"
+                          label="目标置信度"
+                          prop="confidence"
                           sortable
                         />
                         <el-table-column
                           align="center"
-                          label="目标面积"
+                          label="持续时间(秒)"
                           width="150"
-                          prop="detect_area"
-                          sortable
-                        />
-                        <el-table-column
-                          align="center"
-                          label="图像尺寸"
-                          prop="image_size"
+                          prop="duration_sec"
                           sortable
                         />
                       </el-table>
@@ -558,20 +619,17 @@ onMounted(() => {
             <template #paneL>
               <el-scrollbar>
                 <div class="dv-a">
-
-                  <!-- 视频播放器 -->
+                  <!-- 原始视频播放器 -->
                   <div class="video-section">
                     <div v-if="currentVideoUrl" class="video-player">
                       <video
                         :key="currentVideoUrl"
                         :src="currentVideoUrl"
                         controls
-                        autoplay
                         @error="onVideoError"
                       />
                     </div>
                   </div>
-
                 </div>
               </el-scrollbar>
             </template>
@@ -579,19 +637,16 @@ onMounted(() => {
             <template #paneR>
               <el-scrollbar>
                 <div class="dv-a">
-                  <!--              检测图像-->
-                  <div v-if="previewUrl">
-                    <el-image
-                      style="width: 100%; height: 100%; object-fit: contain"
-                      :src="detectUrl"
-                      :zoom-rate="1.2"
-                      :max-scale="7"
-                      :min-scale="0.2"
-                      :preview-src-list="[detectUrl]"
-                      show-progress
-                      :initial-index="0"
-                      fit="contain"
-                    />
+                  <!-- 检测后视频播放器 -->
+                  <div class="video-section">
+                    <div v-if="currentDetectedVideoUrl" class="video-player">
+                      <video
+                        :key="currentDetectedVideoUrl"
+                        :src="currentDetectedVideoUrl"
+                        controls
+                        @error="onVideoError"
+                      />
+                    </div>
                   </div>
                 </div>
               </el-scrollbar>
@@ -737,5 +792,11 @@ code {
   padding: 100px;
   color: #999;
   font-size: 18px;
+}
+
+.progress-text {
+  margin-top: 10px;
+  text-align: center;
+  color: #666;
 }
 </style>
