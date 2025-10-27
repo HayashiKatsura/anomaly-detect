@@ -214,7 +214,7 @@ const previewFile = async file => {
   // 读取图像的函数
   try {
     // const res = await axios.get(`${API_URL}/show_image/${file.file_id}`);
-    currentVideoUrl.value = `${API_URL}/show_image/${file.file_id}/video`;
+    // currentVideoUrl.value = `${API_URL}/show_image/${file.file_id}/video`;
 
     const detectRes = await axios.get(
       `${API_URL}/valid_params/${file.file_id}`
@@ -239,7 +239,7 @@ const previewFile = async file => {
   } catch (error) {
     console.error("预览失败:", error);
     ElNotification.error({
-      title: "检测失败",
+      title: "未检测或检测失败",
       message: "",
       showClose: false,
       duration: 1000
@@ -255,7 +255,7 @@ const detectFiles = async file => {
     duration: 1000
   });
   try {
-    const res = await axios.get(API_URL + "/detect_file", {
+    const res = axios.get(API_URL + "/detect_file", {
       params: {
         weight_id: modelValue.value,
         image_id: file.file_id,
@@ -270,35 +270,32 @@ const detectFiles = async file => {
     if (progressTimer.value) clearInterval(progressTimer.value);
 
     // 轮询进度
-    // progressTimer.value = setInterval(async () => {
-    //   try {
-    //     const progressRes = await axios.get(API_URL+"/api/progress/"+taskId.value);
+    progressTimer.value = setInterval(async () => {
+      try {
+        const progressRes = await axios.get(`${API_URL}/progress/${file.file_id}`);
 
-    //     if (progressRes.data.code === 200) {
-    //       progress.value = progressRes.data.progress;
+				console.log("TCL: progressTimer.value -> progressRes",progressRes)
 
-    //       // 进度100%时，获取结果视频URL并停止轮询
-    //       if (progress.value === 100) {
-    //         clearInterval(progressTimer.value);
-    //         isProcessing.value = false;
-    //         resultUrl.value = API_URL+"/api/result/"+taskId.value
-    //        // resultUrl.value = `${API_URL}/api/result/${taskId.value}`;
-    //         ElMessage.success("检测完成！");
-    //       }
-    //       console.log("url:"+resultUrl.value);
-    //       // 处理错误状态
-    //       if (progress.value === -1) {
-    //         clearInterval(progressTimer.value);
-    //         isProcessing.value = false;
-    //         ElMessage.error("检测过程中发生错误");
-    //       }
-    //     }
-    //   } catch (err) {
-    //     clearInterval(progressTimer.value);
-    //     isProcessing.value = false;
-    //     ElMessage.error(`获取进度失败：${err.message}`);
-    //   }
-    // }, 1000);
+        if (progressRes.data.data.code === 200) {
+          progress.value = progressRes.data.data;
+
+          // 进度100%时，获取结果视频URL并停止轮询
+          if (progress.value === 100) {
+            clearInterval(progressTimer.value);
+            isProcessing.value = false;
+            currentDetectedVideoUrl.value = `${API_URL}/show_image/${file.file_id}/detectVideo`;
+
+            ElMessage.success("检测完成！");
+          }
+          // 处理错误状态
+        }
+      } catch (err) {
+        clearInterval(progressTimer.value);
+        isProcessing.value = false;
+        ElMessage.error(`获取进度失败：${err.message}`);
+      }
+    }, 1000);
+
   } catch (error) {
     console.error("检测失败:", error.message);
     ElNotification.error({
@@ -449,7 +446,7 @@ onMounted(() => {
         </div>
 
         <!-- 搜索区域 -->
-        <div class="search-container flex">
+        <!-- <div class="search-container flex">
           <el-input
             v-model="fileName"
             :prefix-icon="Search"
@@ -464,7 +461,7 @@ onMounted(() => {
             @click="getTableData"
             >搜索</el-button
           >
-        </div>
+        </div> -->
         <!-- 2. 检测进度区 -->
         <!-- <div>
           <div v-if="isProcessing" class="card progress-card">

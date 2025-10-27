@@ -57,19 +57,19 @@ const rules = reactive({
   ]
 });
 
-const formRef = ref(null);
+const formRef = ref(null);//
 
 // 训练配置
 const config = reactive({
-  name: "1",
+  name: "Test",
   trainData: "",
   type: "yolo",
-  version: "ChipsYOLO",
+  version: "YOLOv12",
   device: "gpu",
   size: 640,
   batch: 16,
   lr: 0.01,
-  epoch: 1,
+  epoch: 3,
   dataset_example: "dataset"
 });
 
@@ -924,6 +924,9 @@ const downloadFiles = async (target = "example") => {
   } else if (target === "train_results") {
     params = { train_results: true, seesion_id: currentSessionId.value };
     file_name = config.name;
+  } else if (target === "train_log") {
+    params = { train_log: true, seesion_id: currentSessionId.value };
+    file_name = `${config.name}.log`;
   } else {
     params = { train_results: true, train_id: target.file_id };
     file_name = target.file_name;
@@ -1197,10 +1200,10 @@ const changePage = op => {
                 <div class="dv-b">
                   <!-- <div> -->
                   <!-- 有数据时显示详细信息 -->
-                  <div v-if="showRequireTrain" class="loader">
+                  <!-- <div v-if="showRequireTrain" class="loader">
                     点击开始训练
                     <span />
-                  </div>
+                  </div> -->
                   <div v-if="showRequireTrainData" class="loader">
                     等待训练进度
                     <span />
@@ -1475,7 +1478,7 @@ const changePage = op => {
                           type="success"
                           round
                           plain
-                          @click="exportLogs"
+                          @click="downloadFiles('train_log')"
                           >💾 导出</el-button
                         >
                       </div>
@@ -1780,6 +1783,7 @@ const changePage = op => {
                     class="demo-config"
                   >
                     <el-form-item>
+                      <!-- 开始训练 -->
                       <el-button
                         type="success"
                         :disabled="
@@ -1798,6 +1802,21 @@ const changePage = op => {
                               : "🚀 开始训练"
                         }}
                       </el-button>
+
+                      <!-- 停止训练 -->
+                      <!-- <el-button
+                        type="danger"
+                        :disabled="
+                          !apiConnected ||
+                          hasActiveTraining ||
+                          isOperationInProgress
+                        "
+                        plain
+                        @click.stop="startTraining"
+                      >
+                        停止训练
+                      </el-button> -->
+
                       <el-button
                         type="info"
                         plain

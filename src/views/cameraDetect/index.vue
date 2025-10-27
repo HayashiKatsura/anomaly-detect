@@ -49,7 +49,7 @@ const videoRef = ref(null);
 const canvasRef = ref(null);
 const isCameraOn = ref(false);
 const photoMode = ref("manual"); // 'manual' | 'auto'
-const autoInterval = ref(3); // 自动拍照间隔（秒）
+const autoInterval = ref(1); // 自动拍照间隔（秒）
 const isAutoPhotoActive = ref(false);
 const currentCapturedImages = ref([]); // 当前已拍摄的图片列表
 const totalCapturedImages = ref(0); // 总共已拍摄的图片数量
@@ -273,7 +273,7 @@ const takePhoto = () => {
   }, 200);
 
   // 检查是否需要自动上传
-  if (currentCapturedImages.value.length >= 10) {
+  if (currentCapturedImages.value.length >= 5) {
     autoUploadImages();
   }
 };

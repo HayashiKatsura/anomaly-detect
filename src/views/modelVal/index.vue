@@ -557,7 +557,28 @@ onMounted(() => {
                           prop="mAP50-95"
                           sortable
                         />
+
+                           <el-table-column
+                          align="center"
+                          label="crack"
+                          prop="crack"
+                          sortable
+                        />
                         <el-table-column
+                          align="center"
+                          label="corrosion"
+                          prop="corrosion"
+                          sortable
+                        />
+                        <el-table-column
+                          align="center"
+                          label="obstacle"
+                          prop="obstacle"
+                          sortable
+                        />
+
+
+                        <!-- <el-table-column
                           align="center"
                           label="black"
                           prop="black"
@@ -592,7 +613,7 @@ onMounted(() => {
                           label="circle"
                           prop="circle"
                           sortable
-                        />
+                        /> -->
                       </el-table>
                     </div>
                   </div>
