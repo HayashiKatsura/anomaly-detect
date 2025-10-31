@@ -12,19 +12,27 @@ import {
 import { ElMessname, ElNotification } from "element-plus";
 import axios from "axios";
 import { API_URL } from "@/url.js";
-import { PlusForm } from "plus-pro-components";
 import {
-  Delete,
-  Search,
   Upload,
-  UploadFilled,
-  View,
   Download,
-  SetUp,
-  ArrowLeft,
-  ArrowRight
+  ArrowRight,
+  CaretBottom,
+  CaretTop,
+  Warning
 } from "@element-plus/icons-vue";
 import { downloadByData } from "@pureadmin/utils";
+import {
+  getStorage,
+  deleteFiles,
+  FilesType,
+  predictFiles,
+  showPredictions,
+  validateWeights,
+  showValidations,
+  startTraining,
+  stopTraining,
+  getTrainingLog
+} from "@/api/ultralytics.ts";
 
 defineOptions({
   name: "ModelTrain"
@@ -32,886 +40,97 @@ defineOptions({
 
 const settingLR: ContextProps = reactive({
   minPercent: 25,
-  defaultPercent: 75,
+  defaultPercent: 40,
   split: "vertical"
 });
 
-const settingTB: ContextProps = reactive({
-  minPercent: 35,
-  defaultPercent: 65,
-  split: "horizontal"
-});
 
-const rules = reactive({
-  name: [
-    { required: true, messname: "Please input Activity name", trigger: "blur" },
-    { min: 3, max: 5, messname: "Length should be 3 to 5", trigger: "blur" }
-  ],
-  size: [
-    { required: true, messname: "请输入图像尺寸" },
-    { type: "number", messname: "尺寸必须为数字" },
-    {
-      validator: (rule, value) => value >= 240,
-      messname: "尺寸最小为240"
-    }
-  ]
-});
-
-const formRef = ref(null);//
 
 // 训练配置
-const config = reactive({
+const trainParams = reactive({
   name: "Test",
-  trainData: "",
-  type: "yolo",
-  version: "YOLOv12",
-  device: "gpu",
-  size: 640,
-  batch: 16,
-  lr: 0.01,
-  epoch: 3,
+  dataset_id: "",
+  model: "YOLOv8",
+  device: "cpu",
+  image_size: 640,
+  batch_size: 16,
+  learning_rate: 0.01,
+  epochs: 5,
   dataset_example: "dataset"
 });
 
-// 响应式数据
-const apiConnected = ref(false);
-const monitoringActive = ref(false);
-const currentSessionId = ref(null);
-const currentTrainingData = ref(null);
+const trainModelOptions = [
+  {
+    label: "YOLOv12",
+    value: "YOLOv12"
+  },
+  {
+    label: "YOLOv11",
+    value: "YOLOv11"
+  },
+  {
+    label: "YOLOv8",
+    value: "YOLOv8"
+  },
+  {
+    label: "ChipsYOLO",
+    value: "ChipsYOLO"
+  },
+  {
+    label: "DETR",
+    value: "DETR"
+  }
+];
 
-// const currentTrainingData = ref({
-//   epoch: 2,
-//   learning_rate: 0.00008,
-//   metrics: {
-//     mAP50: 0,
-//     mAP50_95: 0,
-//     precision: 0,
-//     recall: 0
-//   },
-//   timestamp: 1758020144.812673,
-//   total_epochs: 1,
-//   train_losses: {
-//     box_loss: 5.95661,
-//     cls_loss: 17.7157,
-//     obj_loss: 17.7157,
-//     total_loss: 41.388009999999994
-//   },
-//   val_losses: {
-//     box_loss: 5.95722,
-//     cls_loss: 9.64222,
-//     obj_loss: 9.64222,
-//     total_loss: 25.241660000000003
-//   }
-// });
-const sessionStartTime = ref(null);
-const logs = ref([]);
-const logContainer = ref(null);
-const isOperationInProgress = ref(false);
-const lastProgressUpdate = ref(null);
-const trainingPhase = ref(0); // 训练阶段：1=启动, 2=数据加载, 3=训练中, 4=完成
-const waitingTime = ref(0);
-const consecutiveFailures = ref(0);
-const maxConsecutiveFailures = 50;
-const debugInfo = ref(null);
-const showDebugInfo = ref(false);
-const saveFolderId = ref(null);
-const showRequireTrain = ref(true);
-const showRequireTrainData = ref(false);
-const datasetsList = ref([]); // 所有的数据集
-const datasetsOptions = ref([]); // 可选择的数据集
-const targetDataset = ref(null); // 指定目标数据集
+const trainDeviceOptions = [
+  {
+    label: "CPU",
+    value: "cpu"
+  },
+  {
+    label: "GPU",
+    value: "gpu"
+  }
+];
+
+// 响应式数据
+
+const currentSessionId = ref(null);
 const trainedWeights = ref([]);
 const showTrainedRecord = ref(false);
 const showTrainedImages = ref(false);
 const showDatasetsSupplement = ref(false);
 
-// 获取表数据集信息
-const getYamlsData = () => {
-  axios
-    .get(`${API_URL}/show_storage/yamls,weights`, { responseType: "text" })
-    .then(res => {
-      try {
-        const data = JSON.parse(res.data);
-        if (data.length === 0) {
-          return;
-        } else {
-          const res = data.data;
-          // console.log("res", res);
+const trainSettingsVisible = ref(false);
+const showDatasetsList = ref(false);
+const storageData = ref([]);
+const loading = ref(false);
+const selectList = ref([]);
+const datasetsList = ref([]); // 所有的数据集
+const processId = ref(null);
+const trainLogConsoleContentURL = ref("");
+const trainLogConsoleContent = ref("");
 
-          // 数据集文件
-          // datasetsOptions.value = res
-          //   .filter(
-          //     item =>
-          //       String(item.file_id).includes("dataset") ||
-          //       String(item.file_id).includes("yaml")
-          //   )
-          //   .map(item => ({
-          //     value: item.file_id,
-          //     label: item.file_name
-          //   }));
+const lastTrainMetrics = ref(null);
+const currentTrainMetrics = ref(null);
+const currentEpoch = ref(0);
+const isTraining = ref(false);
+const isTrainingButton = ref(false);
 
-          datasetsList.value = res.filter(
-            item =>
-              String(item.file_id).includes("dataset") ||
-              String(item.file_id).includes("yaml")
-          );
-          console.log("datasetsList.value: ", datasetsList.value);
+const logBox = ref(null);
 
-          datasetsOptions.value = datasetsList.value.map(item => ({
-            value: item.file_id,
-            label: item.file_name
-          }));
-
-          console.log("datasetsOptions.value: ", datasetsOptions.value);
-
-          // console.log("res", res);
-
-          //已训练的权重文件
-          trainedWeights.value = res.filter(item =>
-            String(item.file_id).includes("train")
-          );
-
-          console.log("trainedWeights", trainedWeights.value);
-
-          if (datasetsOptions.value.length > 0) {
-            // dataYamlId.value = config.trainData[0].value;
-            // selectedValue.value = datasetsOptions.value[0].value;
-            // console.log("selectedValue", selectedValue.value);
-            config.trainData = datasetsOptions.value[0].value;
-          }
-        }
-      } catch (error) {
-        console.error("解析CSV数据失败:", error);
-      }
-    })
-    .catch(error => {
-      console.error("加载CSV文件失败:", error);
-    });
-};
-
-// 定时器
-let statusCheckInterval = null;
-let progressCheckInterval = null;
-let waitingTimer = null;
-let connectionCheckInterval = null;
-
-// 定期检查连接状态
-const checkConnections = async () => {
-  await checkApiConnection();
-};
-
-// API方法
-const checkApiConnection = async () => {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-    const response = await fetch(`${API_URL}/health`, {
-      method: "GET",
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const result = await response.json();
-    const wasConnected = apiConnected.value;
-    apiConnected.value = result.success;
-
-    if (!wasConnected && result.success) {
-      addLog("API连接已恢复", "success");
-    } else if (wasConnected && !result.success) {
-      addLog("API连接已断开", "error");
-    }
-
-    return result.success;
-  } catch (error) {
-    const wasConnected = apiConnected.value;
-    apiConnected.value = false;
-
-    if (wasConnected) {
-      addLog(`API连接失败: ${error.message}`, "error");
-    }
-
-    return false;
-  }
-};
-
-const startTraining = async () => {
-  // if (!isConfigValid.value) {
-  //   addLog("请填写完整的训练配置", "error");
-  //   return;
-  // }
-
-  if (isOperationInProgress.value) {
-    addLog("操作正在进行中，请稍候", "warning");
-    return;
-  }
-
-  try {
-    isOperationInProgress.value = true;
-    trainingPhase.value = 1;
-    addLog("正在启动训练...", "info");
-
-    // 验证配置
-    const sanitizedConfig = { ...config };
-    // if (sanitizedConfig.freeze === null || sanitizedConfig.freeze === "") {
-    //   delete sanitizedConfig.freeze;
-    // }
-
-    const response = await fetch(`${API_URL}/training/start`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(sanitizedConfig)
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const result = await response.json();
-    saveFolderId.value = result.save_folder_id;
-    console.log("saveFolderId", saveFolderId.value);
-    console.log("result", result);
-
-    if (result.success) {
-      currentSessionId.value = result.session_id;
-      sessionStartTime.value = Date.now() / 1000;
-      trainingPhase.value = 2;
-
-      addLog(`训练启动成功，会话ID: ${result.session_id}`, "success");
-      addLog(`保存目录: ${result.save_dir || "默认目录"}`, "info");
-
-      // 开始监控进度
-      showRequireTrain.value = false;
-      showRequireTrainData.value = true;
-      startProgressMonitoring();
-    } else {
-      throw new Error(result.message || "启动失败");
-    }
-  } catch (error) {
-    addLog(`训练启动失败: ${error.message}`, "error");
-    trainingPhase.value = 0;
-  } finally {
-    isOperationInProgress.value = false;
-  }
-};
-
-// 重置表单
-const resetConfig = formEl => {
-  if (!formEl) return;
-  formEl.resetFields();
-};
-
-const stopTraining = async () => {
-  if (!currentSessionId.value || isOperationInProgress.value) return;
-
-  try {
-    isOperationInProgress.value = true;
-    addLog("正在停止训练...", "info");
-
-    const response = await fetch(
-      `${API_URL}/training/stop/${currentSessionId.value}`,
-      {
-        method: "POST"
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const result = await response.json();
-
-    if (result.success) {
-      addLog("训练已停止", "warning");
-
-      // 检查是否自动重置了
-      if (result.auto_reset) {
-        addLog("状态已自动重置", "info");
-        // 立即执行前端重置
-        resetTrainingState();
-        stopProgressMonitoring();
-      } else {
-        // 如果后端没有自动重置，等待3秒后检查状态
-        setTimeout(async () => {
-          await checkTrainingStatus();
-        }, 3000);
-      }
-    } else {
-      throw new Error(result.message || "停止失败");
-    }
-  } catch (error) {
-    addLog(`停止训练失败: ${error.message}`, "error");
-  } finally {
-    isOperationInProgress.value = false;
-  }
-};
-
-// 计算属性
-const hasActiveTraining = computed(() => !!currentSessionId.value);
-
-// 用 !! 包裹后，结果一定是 true 或 false：
-// 如果 currentSessionId.value 有有效值 → !! 变成 true
-// 如果是空的（null、undefined、0、""）→ !! 变成 false
-
-const progressPercentage = computed(() => {
-  if (!currentTrainingData.value) return 0;
-  const { epoch, total_epochs } = currentTrainingData.value;
-  return Math.min(100, ((epoch - 1) / total_epochs) * 100);
-});
-
-const trainingElapsedTime = computed(() => {
-  if (!sessionStartTime.value) return 0;
-  return Date.now() / 1000 - sessionStartTime.value;
-});
-
-const timeSinceLastUpdate = computed(() => {
-  if (!lastProgressUpdate.value) return 0;
-  return Math.floor((Date.now() - lastProgressUpdate.value) / 1000);
-});
-
-const isProgressHealthy = computed(() => {
-  return timeSinceLastUpdate.value < 60 && consecutiveFailures.value < 10;
-});
-
-const estimatedTimeRemaining = computed(() => {
-  if (!currentTrainingData.value || !sessionStartTime.value) return "N/A";
-
-  const { epoch, total_epochs } = currentTrainingData.value;
-  const elapsed = trainingElapsedTime.value;
-  const avgTimePerEpoch = elapsed / epoch;
-  const remainingEpochs = total_epochs - epoch;
-
-  console.log("elapsed", elapsed);
-  console.log("avgTimePerEpoch", avgTimePerEpoch);
-  console.log("remainingEpochs", remainingEpochs);
-
-  return formatDuration(avgTimePerEpoch * remainingEpochs * 3);
-});
-
-const isTrainingCompleted = computed(() => {
-  return trainingPhase.value === 4;
-});
-
-// 监听训练数据变化
-watch(currentTrainingData, newData => {
-  if (newData) {
-    showRequireTrainData.value = false;
-    trainingPhase.value = 3; // 进入训练阶段
-    lastProgressUpdate.value = Date.now();
-    consecutiveFailures.value = 0;
-    addLog(
-      `进度更新: Epoch ${newData.epoch}, mAP50: ${(newData.metrics.mAP50 * 100).toFixed(1)}%`,
-      "success"
-    );
-  }
-});
-
-// watch(
-
-// )
-
-// 工具方法
-const addLog = (message, type = "info") => {
-  logs.value.push({
-    message,
-    type,
-    timestamp: new Date()
-  });
-
-  // 保持日志数量
-  if (logs.value.length > 200) {
-    logs.value = logs.value.slice(-150);
-  }
-
-  // 滚动到底部
-  nextTick(() => {
-    if (logContainer.value) {
-      logContainer.value.scrollTop = logContainer.value.scrollHeight;
-    }
+const scrollToBottom = () => {
+  // 下一帧，等 DOM 更新完成后再滚动
+  requestAnimationFrame(() => {
+    if (logBox.value) logBox.value.scrollTop = logBox.value.scrollHeight;
   });
 };
 
-const clearLogs = () => {
-  logs.value = [];
-  addLog("日志已清空", "info");
-};
-
-const exportLogs = () => {
-  const logText = logs.value
-    .map(
-      log =>
-        `[${formatLogTime(log.timestamp)}] ${log.type.toUpperCase()}: ${log.message}`
-    )
-    .join("\n");
-
-  const blob = new Blob([logText], { type: "text/plain" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `yolo_training_logs_${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.txt`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-
-  addLog("日志已导出", "success");
-};
-
-const formatTime = timestamp => {
-  return new Date(timestamp * 1000).toLocaleTimeString();
-};
-
-const formatLogTime = timestamp => {
-  return timestamp.toLocaleTimeString();
-};
-
-const formatDuration = seconds => {
-  if (seconds < 60) return `${Math.floor(seconds)}秒`;
-
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-
-  if (hours > 0) {
-    return `${hours}小时${minutes}分钟${secs}秒`;
-  } else {
-    return `${minutes}分钟${secs}秒`;
-  }
-};
-
-const formatNumber = (num, decimals = 6) => {
-  if (typeof num !== "number") return "N/A";
-  return num.toFixed(decimals);
-};
-
-const formatPercentage = num => {
-  if (typeof num !== "number") return "N/A";
-  return (num * 100).toFixed(2) + "%";
-};
-
-const getTrainingStatusText = () => {
-  switch (trainingPhase.value) {
-    case 1:
-      return "启动中";
-    case 2:
-      return "加载数据";
-    case 3:
-      return "训练中";
-    case 4:
-      return "已完成";
-    default:
-      return "未知";
-  }
-};
-
-// 新增：手动压缩训练结果的方法
-const zipTrainingResults = async () => {
-  if (!currentSessionId.value || isOperationInProgress.value) return;
-
-  try {
-    isOperationInProgress.value = true;
-    addLog("正在压缩训练结果...", "info");
-
-    const response = await fetch(
-      `${API_URL}/training/zip/${currentSessionId.value}`,
-      {
-        method: "POST"
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const result = await response.json();
-
-    if (result.success) {
-      addLog(`压缩完成: ${result.zip_path}`, "success");
-      addLog(`原始目录: ${result.save_dir}`, "info");
-    } else {
-      throw new Error(result.message || "压缩失败");
-    }
-  } catch (error) {
-    addLog(`压缩失败: ${error.message}`, "error");
-  } finally {
-    isOperationInProgress.value = false;
-  }
-};
-
-const refreshStatus = async () => {
-  if (isOperationInProgress.value) return;
-
-  try {
-    isOperationInProgress.value = true;
-    addLog("正在刷新状态...", "info");
-
-    const response = await fetch(`${API_URL}/training/status`);
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const result = await response.json();
-
-    if (result.success && result.data) {
-      let foundActive = false;
-
-      // 查找活跃的训练会话
-      for (const [sessionId, sessionInfo] of Object.entries(result.data)) {
-        if (["running", "starting"].includes(sessionInfo.status)) {
-          currentSessionId.value = sessionId;
-          sessionStartTime.value = sessionInfo.start_time;
-          trainingPhase.value = sessionInfo.status === "running" ? 3 : 2;
-          foundActive = true;
-
-          addLog(
-            `发现活跃训练会话: ${sessionId} (${sessionInfo.status})`,
-            "info"
-          );
-
-          // 开始监控进度
-          startProgressMonitoring();
-          break;
-        }
-      }
-
-      if (!foundActive) {
-        addLog("没有发现活跃的训练会话", "info");
-        resetTrainingState();
-      }
-    } else {
-      addLog("获取状态失败", "warning");
-    }
-  } catch (error) {
-    addLog(`刷新状态失败: ${error.message}`, "error");
-  } finally {
-    isOperationInProgress.value = false;
-  }
-};
-
-const checkTrainingProgress = async () => {
-  if (!currentSessionId.value) return;
-
-  try {
-    const [progressResponse, statusResponse] = await Promise.all([
-      fetch(`${API_URL}/training/progress/${currentSessionId.value}`),
-      fetch(`${API_URL}/training/status/${currentSessionId.value}`)
-    ]);
-
-    // 处理进度数据
-    if (progressResponse.ok) {
-      const progressResult = await progressResponse.json();
-
-      // 保存调试信息
-      if (progressResult.debug) {
-        debugInfo.value = progressResult.debug;
-      }
-
-      if (progressResult.success && progressResult.data) {
-        currentTrainingData.value = progressResult.data;
-        console.log(
-          "TCL: checkTrainingProgress -> progressResult.data",
-          progressResult.data
-        );
-
-        lastProgressUpdate.value = Date.now();
-        consecutiveFailures.value = 0;
-
-        console.log(
-          `进度更新: Epoch ${progressResult.data.epoch}, mAP50: ${(progressResult.data.metrics.mAP50 * 100).toFixed(1)}%`
-        );
-      } else {
-        consecutiveFailures.value++;
-        console.log(
-          `进度获取失败 ${consecutiveFailures.value}/${maxConsecutiveFailures}`
-        );
-      }
-    } else {
-      consecutiveFailures.value++;
-      console.log(
-        `进度API失败 ${consecutiveFailures.value}/${maxConsecutiveFailures}`
-      );
-    }
-
-    // 处理状态数据
-    if (statusResponse.ok) {
-      const statusResult = await statusResponse.json();
-
-      if (statusResult.success && statusResult.data) {
-        const status = statusResult.data.status;
-
-        switch (status) {
-          case "completed":
-            addLog(`训练完成: ${currentSessionId.value}`, "success");
-            // addLog("训练结果已自动打包压缩", "info");
-            trainingPhase.value = 4;
-            stopProgressMonitoring();
-            break;
-          case "error":
-            addLog(`训练出错: ${currentSessionId.value}`, "error");
-            stopProgressMonitoring();
-            break;
-          case "stopped":
-            addLog(`训练已停止: ${currentSessionId.value}`, "warning");
-            stopProgressMonitoring();
-            // 如果是停止状态，自动重置
-            setTimeout(() => {
-              resetTrainingState();
-            }, 2000);
-            break;
-          case "running":
-            if (trainingPhase.value < 3) {
-              trainingPhase.value = 3;
-            }
-            break;
-        }
-      }
-    }
-
-    // 健康检查
-    if (consecutiveFailures.value >= maxConsecutiveFailures) {
-      addLog(
-        `连续${maxConsecutiveFailures}次获取进度失败，可能训练已异常终止`,
-        "error"
-      );
-      stopProgressMonitoring();
-    }
-  } catch (error) {
-    consecutiveFailures.value++;
-    console.error("进度检查失败:", error);
-
-    if (consecutiveFailures.value >= maxConsecutiveFailures) {
-      addLog("进度监控失败次数过多，停止监控", "error");
-      stopProgressMonitoring();
-    }
-  }
-};
-
-const startProgressMonitoring = () => {
-  if (progressCheckInterval) return; // 避免重复启动
-
-  monitoringActive.value = true;
-  waitingTime.value = 0;
-  consecutiveFailures.value = 0; // 重置失败计数
-  addLog("开始监控训练进度...", "info");
-
-  // 立即检查一次
-  checkTrainingProgress();
-
-  // 启动等待计时器
-  waitingTimer = setInterval(() => {
-    waitingTime.value++;
-  }, 1000);
-
-  // 每5秒检查一次进度
-  progressCheckInterval = setInterval(checkTrainingProgress, 5000);
-
-  // 如果60秒后还没有数据，自动触发CSV扫描
-  setTimeout(() => {
-    if (
-      !currentTrainingData.value &&
-      currentSessionId.value &&
-      monitoringActive.value
-    ) {
-      addLog("60秒后仍无数据，自动触发CSV扫描...", "warning");
-      forceCsvScan();
-    }
-  }, 60000);
-};
-
-const stopProgressMonitoring = () => {
-  if (progressCheckInterval) {
-    clearInterval(progressCheckInterval);
-    progressCheckInterval = null;
-  }
-
-  if (waitingTimer) {
-    clearInterval(waitingTimer);
-    waitingTimer = null;
-  }
-
-  monitoringActive.value = false;
-
-  if (currentSessionId.value) {
-    addLog("停止监控训练进度", "info");
-  }
-};
-
-const resetTraining = () => {
-  stopProgressMonitoring();
-  resetTrainingState();
-  addLog("训练状态已重置", "info");
-};
-
-const resetTrainingState = () => {
-  // currentSessionId.value = null;
-  currentTrainingData.value = null;
-  sessionStartTime.value = null;
-  lastProgressUpdate.value = null;
-  trainingPhase.value = 0;
-  waitingTime.value = 0;
-  consecutiveFailures.value = 0;
-  debugInfo.value = null;
-  showDebugInfo.value = false;
-};
-
-const debugSession = async () => {
-  if (!currentSessionId.value || isOperationInProgress.value) return;
-
-  try {
-    isOperationInProgress.value = true;
-    const response = await fetch(`${API_URL}/debug/${currentSessionId.value}`);
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const result = await response.json();
-
-    if (result.success) {
-      console.log("调试信息:", result.debug_data);
-      debugInfo.value = result.debug_data;
-      showDebugInfo.value = true;
-
-      const debug = result.debug_data;
-      addLog("=== 调试信息 ===", "info");
-      addLog(`会话状态: ${debug.session_details?.status || "N/A"}`, "info");
-      addLog(`CSV路径: ${debug.session_details?.csv_path || "未设置"}`, "info");
-      addLog(`CSV存在: ${debug.csv_info?.exists || false}`, "info");
-      addLog(`CSV行数: ${debug.csv_content?.rows || 0}`, "info");
-      addLog(
-        `保存目录: ${debug.session_details?.save_dir || "未设置"}`,
-        "info"
-      );
-
-      if (debug.csv_content && debug.csv_content.last_few_rows?.length > 0) {
-        const lastRow =
-          debug.csv_content.last_few_rows[
-            debug.csv_content.last_few_rows.length - 1
-          ];
-        addLog(`最新数据: Epoch ${lastRow.epoch || "N/A"}`, "info");
-      }
-    } else {
-      throw new Error(result.error || "调试失败");
-    }
-  } catch (error) {
-    addLog(`调试失败: ${error.message}`, "error");
-  } finally {
-    isOperationInProgress.value = false;
-  }
-};
-
-const forceCsvScan = async () => {
-  if (!currentSessionId.value || isOperationInProgress.value) return;
-
-  try {
-    isOperationInProgress.value = true;
-    addLog("重新扫描CSV文件...", "info");
-
-    const response = await fetch(
-      `${API_URL}/force_csv_scan/${currentSessionId.value}`,
-      {
-        method: "POST"
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const result = await response.json();
-
-    if (result.success) {
-      addLog(`CSV扫描成功: ${result.csv_path || "未找到"}`, "success");
-
-      // 2秒后检查进度
-      setTimeout(() => {
-        checkTrainingProgress();
-      }, 2000);
-    } else {
-      throw new Error(result.message || "扫描失败");
-    }
-  } catch (error) {
-    addLog(`CSV扫描失败: ${error.message}`, "error");
-  } finally {
-    isOperationInProgress.value = false;
-  }
-};
-
-const checkTrainingStatus = async () => {
-  if (!currentSessionId.value) return;
-
-  try {
-    const response = await fetch(
-      `${API_URL}/training/status/${currentSessionId.value}`
-    );
-
-    if (response.ok) {
-      const result = await response.json();
-
-      if (result.success && result.data) {
-        const status = result.data.status;
-
-        if (["completed", "error", "stopped"].includes(status)) {
-          addLog(
-            `训练状态已更新: ${status}`,
-            status === "completed" ? "success" : "warning"
-          );
-
-          if (status === "completed") {
-            trainingPhase.value = 4;
-          }
-
-          stopProgressMonitoring();
-        }
-      }
-    }
-  } catch (error) {
-    console.error("检查训练状态失败:", error);
-  }
-};
-
-const toggleDebugInfo = () => {
-  showDebugInfo.value = !showDebugInfo.value;
-};
-
-// 生命周期
-onMounted(async () => {
-  addLog("YOLO训练控制器已启动", "info");
-
-  // 检查API连接
-  await checkApiConnection();
-
-  // 刷新训练状态
-  await refreshStatus();
-
-  // 定期检查连接
-  connectionCheckInterval = setInterval(checkConnections, 15000);
-
-  getYamlsData();
+watch(trainLogConsoleContent, async () => {
+  await nextTick();
+  scrollToBottom();
 });
 
-onUnmounted(() => {
-  // 清理定时器
-  if (connectionCheckInterval) {
-    clearInterval(connectionCheckInterval);
-  }
-  if (progressCheckInterval) {
-    clearInterval(progressCheckInterval);
-  }
-  if (waitingTimer) {
-    clearInterval(waitingTimer);
-  }
-
-  addLog("YOLO训练控制器已关闭", "info");
-});
 
 // 文件下载
 const downloadFiles = async (target = "example") => {
@@ -920,13 +139,13 @@ const downloadFiles = async (target = "example") => {
   let file_name = "";
   if (target === "example") {
     params = { dataset_example: true };
-    file_name = config.dataset_example;
+    file_name = trainParams.dataset_example;
   } else if (target === "train_results") {
     params = { train_results: true, seesion_id: currentSessionId.value };
-    file_name = config.name;
+    file_name = trainParams.name;
   } else if (target === "train_log") {
     params = { train_log: true, seesion_id: currentSessionId.value };
-    file_name = `${config.name}.log`;
+    file_name = `${trainParams.name}.log`;
   } else {
     params = { train_results: true, train_id: target.file_id };
     file_name = target.file_name;
@@ -964,189 +183,226 @@ const downloadFiles = async (target = "example") => {
   }
 };
 
-// 文件上传
-const uploadMode = ref("random");
-const selectedFolderId = ref(null);
-const showFileUpload = ref(false);
-const uploadFileList = ref([]);
-const uploading = ref(false);
 
-// 随机上传
-const openRandomUpload = (file_id = null) => {
-  console.log("scope.row: ", file_id);
-  uploadMode.value = "random";
-  selectedFolderId.value = null;
-  showFileUpload.value = true;
-  targetDataset.value = file_id;
-};
-// 指定文件夹上传
-const openFolderUpload = row => {
-  selectedFolderId.value = row.file_id;
-  uploadMode.value = "folder";
-  selectedFolderId.value = row.file_id;
-  showFileUpload.value = true;
-};
-const closeDialog = () => {
-  uploadFileList.value = [];
-  showFileUpload.value = false;
-  uploadMode.value = "random";
-  selectedFolderId.value = null;
-};
-// 文件上传
-const submitFilesUpload = () => {
-  if (uploadFileList.value.length === 0) {
-    // ElMessage.warning("请选择要上传的文件");
-    return;
-  }
-  uploading.value = true;
-  const formData = new FormData();
-  uploadFileList.value.forEach(file => {
-    formData.append("files", file.raw);
-  });
-  ElNotification.warning({
-    title: "正在上传...",
-    message: "",
-    showClose: false,
-    duration: 1000
-  });
-  const targetFolderId = selectedFolderId.value
-    ? selectedFolderId.value
-    : targetDataset.value;
-  console.log("targetDataset.value: ", targetDataset.value);
-  console.log("selectedFolderId.value: ", selectedFolderId.value);
-  console.log("targetFolderId: ", targetFolderId);
 
-  axios
-    .post(`${API_URL}/upload_file/${targetFolderId}`, formData, {
-      headers: { "Content-Type": "multipart/form-data" }
-    })
-    .then(response => {
-      if (response.data.code === 200) {
-        showFileUpload.value = false;
-        uploadFileList.value = [];
-        // getTableData();
-        ElNotification.success({
-          title: "上传成功",
-          message: "",
-          showClose: false,
-          duration: 1000
-        });
-      } else {
-        ElNotification.error({
-          title: "上传失败",
-          message: response.data.msg,
-          showClose: false,
-          duration: 1000
-        });
-      }
-    })
-    .catch(error => {
-      console.error("上传错误:", error);
-      ElNotification.error({
-        title: "上传失败",
-        message: error.response?.data?.msg || error.message || "未知错误",
-        showClose: false,
-        duration: 1000
-      });
-    })
-    .finally(() => {
-      uploading.value = false;
-      getYamlsData();
+//挂载完成
+onMounted(async () => {
+  try {
+    loading.value = true;
+    const response = await getStorage({
+      page: 1,
+      page_image_size: 100
     });
+    storageData.value = response.data.data.files;
+
+    // 数据集数据
+    datasetsList.value = storageData.value.filter(file =>
+      String(file.kind).includes("dataset")
+    );
+
+    trainParams.dataset_id = datasetsList.value[0].id; // 默认选择第一项
+
+    console.log("datasetsList", datasetsList.value);
+
+    // total.value = storageData.value.length
+  } catch (error) {
+    console.error("获取数据失败:", error);
+  } finally {
+    loading.value = false;
+  }
+});
+
+// 启动训练
+const preHandleStartTraining = () => {
+  trainSettingsVisible.value = true;
+  isTraining.value = true;
+  isTrainingButton.value = true;
 };
 
-// 文件选择变化处理
-const handleFileChangeUnified = file => {
-  // 定义允许的文件扩展名及分组
-  const allowed = {
-    archive: [".zip", ".rar", ".7z"],
-    config: [".yaml", ".yml"]
-  };
-  const fileName = file.raw.name.toLowerCase();
-  // 判断当前文件所属分组
-  let fileGroup = null;
-  for (const group in allowed) {
-    if (allowed[group].some(ext => fileName.endsWith(ext))) {
-      fileGroup = group;
-      break;
-    }
-  }
-  if (!fileGroup) {
+const cancelTraining = () => {
+  trainSettingsVisible.value = false;
+  if (!isTraining.value) isTrainingButton.value = false;
+};
+
+const pollingTimer = ref(null);
+const unchangedCount = ref(0);
+const lastEpochChangeTime = ref(null);
+const trainingInterval = ref(5000); // 初始间隔5秒
+const MAX_UNCHANGED_COUNT = 3; // 增加到10次，因为训练时间可能较久
+
+const handleStartTraining = async () => {
+  isTraining.value = true;
+  trainSettingsVisible.value = false;
+  try {
+    const trainRes = await startTraining(trainParams);
+    console.log("trainRes", trainRes.data);
+    processId.value = trainRes.data.data.process_id;
+    trainLogConsoleContentURL.value = `${API_URL}/show-files/${processId.value}?file_type=${FilesType.TRAINING_LOG}&t=${Date.now()}`;
+
+    // 重置状态
+    unchangedCount.value = 0;
+    lastEpochChangeTime.value = Date.now();
+    trainingInterval.value = 5000;
+    currentEpoch.value = null;
+
+    // 开始轮询
+    startPolling();
+  } catch (error) {
+    console.error("训练启动失败:", error);
     ElNotification.error({
-      title: "文件类型不支持!",
+      title: "启动训练失败",
+      message: "",
       showClose: false,
       duration: 1000
     });
-    uploadFileList.value.pop();
-    return;
-  }
-  // 检查上传列表中是否存在文件且类型必须一致
-  if (uploadFileList.value.length > 1) {
-    // 取第一个文件所属分组
-    const firstName = uploadFileList.value[0].raw.name.toLowerCase();
-    let firstGroup = null;
-    for (const group in allowed) {
-      if (allowed[group].some(ext => firstName.endsWith(ext))) {
-        firstGroup = group;
-        break;
-      }
-    }
-    if (firstGroup && firstGroup !== fileGroup) {
-      // ElMessage.error("一次只能上传同一类型的文件!");
-      uploadFileList.value.pop();
-      return;
-    }
-  }
-  // 累计总大小判断（单位：字节）
-  const totalSize = uploadFileList.value.reduce(
-    (sum, f) => sum + f.raw.size,
-    0
-  );
-  if (totalSize > 104857600) {
-    // ElMessage.error("总大小不能超过100MB!");
-    uploadFileList.value.pop();
+    isTraining.value = false;
+    isTrainingButton.value = false;
   }
 };
-const showType = ref(false); //展示类型 True 单张展示， False 全部展示
-const previewUrl = ref([]);
-const previewFile = async file => {
-  showRequireTrain.value = false;
-  previewUrl.value = [];
-  currentPage.value = 0;
-  // 读取图像的函数
+
+const startPolling = () => {
+  // 清除之前的定时器
+  if (pollingTimer.value) {
+    clearTimeout(pollingTimer.value);
+  }
+
+  // 立即执行一次
+  handleGetTrainingLog();
+};
+const handleGetTrainingLog = async () => {
   try {
-    const res = await axios.get(`${API_URL}/show_image/${file.file_id}`);
-    previewUrl.value = res.data.data.train_images;
-    if (previewUrl.value.length > 0) {
-      ElNotification.success({
-        title: "已存在训练结果",
-        message: "",
-        showClose: false,
-        duration: 1000
-      });
-      showTrainedImages.value = true;
+    const traingLogRes = await getTrainingLog(processId.value);
+    const traingLogContent = traingLogRes.data.data;
+    console.log("traingLogContent", traingLogContent);
+    console.log("traingLogContent.data.length", traingLogContent.data?.length);
+
+    const msg = traingLogContent?.msg || "";
+
+    // 判断消息类型
+    if (msg.includes("无")) {
+      // 训练日志还未生成或无数据，继续等待
+      console.log("训练日志状态:", msg, "- 继续等待...");
+      // 这种情况不计入unchangedCount，因为训练可能还未开始
+      scheduleNextPoll();
+    } else if (msg === "ok") {
+      try {
+        const trainLogConsoleContentRes = await axios.get(
+          trainLogConsoleContentURL.value,
+          {
+            responseType: "text"
+          }
+        );
+        trainLogConsoleContent.value = trainLogConsoleContentRes.data;
+      } catch (error) {
+        console.error("读取日志失败:", error);
+        trainLogConsoleContent.value = `读取日志失败：${error.message}`;
+      }
+
+      // 训练正在进行，处理epoch变化
+      const newMetrics = traingLogContent.data.at(-1);
+      console.log("newMetrics", newMetrics);
+      const newEpoch = newMetrics?.epoch;
+
+      if (newEpoch !== undefined && newEpoch !== null) {
+        // 检查 epoch 是否变化
+        if (currentEpoch.value !== newEpoch) {
+          // epoch 发生变化
+          const now = Date.now();
+          if (lastEpochChangeTime.value && currentEpoch.value !== null) {
+            // 计算动态间隔（epoch变化的时间间隔）
+            const calculatedInterval = now - lastEpochChangeTime.value;
+            trainingInterval.value = Math.max(calculatedInterval, 3000); // 最小3秒
+            console.log(`Epoch变化间隔: ${trainingInterval.value}ms`);
+          }
+
+          lastEpochChangeTime.value = now;
+          unchangedCount.value = 0; // 重置未变化计数
+          currentEpoch.value = newEpoch;
+          console.log("currentEpoch", currentEpoch.value);
+          currentTrainMetrics.value = newMetrics;
+          if (traingLogContent.data?.length == 1) { // TODO 有点不是很同步
+            lastTrainMetrics.value = newMetrics;
+          } else {
+            lastTrainMetrics.value = traingLogContent.data.at(-2);
+          }
+          // lastTrainMetrics.value = traingLogContent.data.at(-2);
+
+          console.log("currentTrainMetrics", currentTrainMetrics.value);
+          console.log("lastTrainMetrics", lastTrainMetrics.value);
+          scheduleNextPoll();
+        } else {
+          // epoch 未变化
+          unchangedCount.value++;
+          console.log(
+            `Epoch未变化次数: ${unchangedCount.value}/${MAX_UNCHANGED_COUNT}`
+          );
+
+          // 判断是否继续轮询
+          if (unchangedCount.value < MAX_UNCHANGED_COUNT) {
+            scheduleNextPoll();
+          } else {
+            console.log("训练已完成或停止（连续未变化达到阈值），停止轮询");
+            stopPolling();
+            isTraining.value = false;
+            isTrainingButton.value = false;
+          }
+        }
+      } else {
+        // msg为ok但没有epoch数据，继续轮询
+        console.log("数据格式异常，继续轮询...");
+        scheduleNextPoll();
+      }
     } else {
-      return;
+      // 其他状态消息
+      console.log("训练状态:", msg);
+      scheduleNextPoll();
     }
   } catch (error) {
-    console.error("预览失败:", error);
+    console.error("获取训练日志失败:", error);
+    // 出错时也继续尝试
+    unchangedCount.value++;
+    if (unchangedCount.value < MAX_UNCHANGED_COUNT) {
+      scheduleNextPoll();
+    } else {
+      console.log("连续失败次数过多，停止轮询");
+      stopPolling();
+    }
   }
 };
-const currentPage = ref(0); // 切图
 
-const changePage = op => {
-  if (op > 0) {
-    if (currentPage.value === previewUrl.value.length - 1) {
-      currentPage.value = 0;
-    } else {
-      currentPage.value += 1;
-    }
+// 调度下一次轮询
+const scheduleNextPoll = () => {
+  pollingTimer.value = setTimeout(() => {
+    handleGetTrainingLog();
+  }, trainingInterval.value);
+};
+
+const stopPolling = () => {
+  if (pollingTimer.value) {
+    clearTimeout(pollingTimer.value);
+    pollingTimer.value = null;
+  }
+  console.log("轮询已停止");
+};
+
+// 组件卸载时清理定时器
+onUnmounted(() => {
+  stopPolling();
+});
+
+const formatTimeSimple = ms => {
+  if (!ms || ms < 0) return "0秒";
+
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+  if (hours > 0) {
+    return `约${hours}小时${minutes}分`;
+  } else if (minutes > 0) {
+    return `约${minutes}分钟`;
   } else {
-    if (currentPage.value === 0) {
-      currentPage.value = previewUrl.value.length - 1;
-    } else {
-      currentPage.value -= 1;
-    }
+    return `不到1分钟`;
   }
 };
 </script>
@@ -1155,792 +411,916 @@ const changePage = op => {
   <el-card shadow="never">
     <template #header>
       <div class="card-header">
-        <div class="header flex justify-between">
-          <div>🎯 训练监视器</div>
-          <!-- 切换预览模式 -->
-
-          <div class="status-indicators flex space-x-5">
-            <div class="hover:cursor-pointer" @click="showType = !showType">
-              <el-text v-if="previewUrl.length > 0" class="mx-1" type="warning"
-                >切换预览模式</el-text
+        <div class="header flex justify-between items-center">
+          <div class="flex items-center">
+            <div v-if="!isTrainingButton">
+              <el-button type="success" plain @click="preHandleStartTraining"
+                >✅ 启动训练</el-button
               >
             </div>
-            <div class="status-item" :class="{ connected: apiConnected }">
-              <span class="indicator" />
-              API: {{ apiConnected ? "已连接" : "未连接" }}
-            </div>
-
-            <div class="status-item" :class="{ connected: monitoringActive }">
-              <span class="indicator" />
-              状态: {{ monitoringActive ? "活跃" : "停止" }}
-            </div>
-
-            <div v-if="hasActiveTraining" class="status-item">
-              <span class="indicator training" />
-              训练: {{ getTrainingStatusText() }}
-            </div>
-
-            <div v-if="!apiConnected">
+            <div v-else>
               <el-button type="danger" plain @click="checkApiConnection"
-                >🔄 重新连接</el-button
+                >❌ 停止训练</el-button
               >
+            </div>
+          </div>
+
+          <div class="flex space-x-2 items-center">
+            <div>
+              <el-button
+                type="text"
+                class="rounded-lg transition-all duration-200 transform hover:scale-130"
+                plain
+                @click="showDatasetsList = true"
+                >📊 数据集
+              </el-button>
+            </div>
+            <div>|</div>
+            <div>
+              <el-button
+                type="text"
+                class="rounded-lg transition-all duration-200 transform hover:scale-130"
+                plain
+                @click="trainSettingsVisible = true"
+                >📝 训练记录
+              </el-button>
+            </div>
+            <div
+              v-if="currentTrainMetrics && lastTrainMetrics"
+              class="flex items-center"
+            >
+              <div>|</div>
+              <div>
+                <el-button
+                  class="rounded-lg transition-all duration-200 transform hover:scale-130"
+                  type="text"
+                  round
+                  plain
+                  @click="downloadFiles('train_log')"
+                  >💾 导出日志</el-button
+                >
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      <!-- 训练参数 -->
+      <el-dialog
+        v-model="trainSettingsVisible"
+        title="设置训练参数"
+        width="500px"
+        draggable
+        @close="cancelTraining"
+      >
+        <div>
+          项目名称
+          <el-input
+            v-model="trainParams.name"
+            style="width: 100%; color: #626aef"
+            placeholder="输入项目名称"
+          />
+        </div>
+        <div class="full-width-item">
+          <div class="flex justify-between">
+            <div>数据集</div>
+            <div>
+              <el-button
+                class="rounded-lg transition-all duration-200 transform hover:scale-130"
+                image_size="small"
+                type="text"
+                @click.stop="downloadFiles('example')"
+                style="font-image_size: 10"
+                >下载数据集样本</el-button
+              >
+            </div>
+          </div>
+
+          <el-select
+            v-model="trainParams.dataset_id"
+            placeholder="Select"
+            style="width: 100%"
+            text-color="#626aef"
+          >
+            <el-option
+              v-for="item in datasetsList"
+              :key="item.id"
+              :label="item.original_filename"
+              :value="item.id"
+            />
+          </el-select>
+        </div>
+
+        <div class="full-width-item">
+          模型
+          <el-select
+            v-model="trainParams.model"
+            placeholder="Select"
+            style="width: 100%"
+            text-color="#626aef"
+          >
+            <el-option
+              v-for="item in trainModelOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+        </div>
+
+        <div class="full-width-item">
+          设备
+          <el-select
+            v-model="trainParams.device"
+            placeholder="Select"
+            style="width: 100%"
+            text-color="#626aef"
+          >
+            <el-option
+              v-for="item in trainDeviceOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+        </div>
+
+        <div>
+          训练次数
+          <el-input
+            v-model="trainParams.epochs"
+            style="width: 100%; color: #626aef"
+            placeholder="输入训练次数"
+          />
+        </div>
+
+        <div>
+          尺寸
+          <el-input
+            v-model="trainParams.image_size"
+            style="width: 100%; color: #626aef"
+            placeholder="输入图像尺寸"
+          />
+        </div>
+
+        <div>
+          批次
+          <el-input
+            v-model="trainParams.batch_size"
+            style="width: 100%; color: #626aef"
+            placeholder="输入batch_size大小"
+          />
+        </div>
+
+        <div>
+          学习率
+          <el-input
+            v-model="trainParams.learning_rate"
+            style="width: 100%; color: #626aef"
+            placeholder="输入学习率"
+          />
+        </div>
+
+        <template #footer>
+          <div class="dialog-footer">
+            <el-button @click="cancelTraining">取消训练</el-button>
+            <el-button type="primary" @click="handleStartTraining">
+              启动训练
+            </el-button>
+          </div>
+        </template>
+      </el-dialog>
+
+      <!-- 数据集 -->
+      <el-dialog
+        v-model="showDatasetsList"
+        title="数据集详情"
+        width="1200px"
+        draggable
+      >
+        <el-table
+          :data="datasetsList"
+          border
+          stripe
+          style="font-image_size: x-small"
+          highlight-current-row
+          height="350"
+        >
+          <el-table-column
+            align="center"
+            label="数据集名称"
+            prop="original_filename"
+          />
+          <el-table-column align="center" label="训练集数量">
+            <template #default="scope">
+              <div v-if="scope.row?.remark">
+                {{ scope.row.remark.train_cases_count }}
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column align="center" label="验证集数量">
+            <template #default="scope">
+              <div v-if="scope.row?.remark">
+                {{ scope.row.remark.val_cases_count }}
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column align="center" label="上一次训练集数量">
+            <template #default="scope">
+              <div v-if="scope.row?.remark">
+                {{ scope.row.remark.last_train_cases_count }}
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column align="center" label="上一次验证集数量">
+            <template #default="scope">
+              <div v-if="scope.row?.remark">
+                {{ scope.row.remark.last_val_cases_count }}
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column align="center" label="训练集数量">
+            <template #default="scope">
+              <div v-if="scope.row?.remark">
+                {{ scope.row.remark.train_cases_count }}
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column align="center" label="训练集数量">
+            <template #default="scope">
+              <div v-if="scope.row?.remark">
+                {{ scope.row.remark.train_cases_count }}
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column align="center" label="标注类别">
+            <template #default="scope">
+              <div v-if="scope.row?.remark">
+                <div
+                  v-for="(item, index) in scope.row.remark.names"
+                  :key="index"
+                >
+                  {{ index }}:{{ item }}
+                </div>
+              </div>
+            </template>
+          </el-table-column>
+
+          <el-table-column
+            align="center"
+            label="数据集更新时间"
+            prop="updated_at"
+          />
+          <el-table-column align="center" label="训练次数">
+            <template #default="scope">
+              <div v-if="scope.row?.remark">
+                {{ scope.row.remark.train_count }}
+              </div>
+            </template>
+          </el-table-column>
+
+          <el-table-column align="center" label="最新训练时间">
+            <template #default="scope">
+              <div v-if="scope.row?.remark">
+                {{ scope.row.remark.train_date }}
+              </div>
+            </template>
+          </el-table-column>
+
+          <el-table-column align="center" label="最新性能指标">
+            <template #default="scope">
+              <div v-if="scope.row?.remark">
+                <div
+                  v-for="(item, index) in scope.row.remark.metrics"
+                  :key="index"
+                >
+                  {{ index }}:{{ item }}
+                </div>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column align="center" label="操作" prop="recall">
+            <template #default="scope">
+              <div>补充数据</div>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-dialog>
+
+      <!-- 训练记录展示 -->
+      <el-dialog
+        v-model="showTrainedRecord"
+        title="训练记录"
+        width="1000"
+        align-center
+        close-on-press-escape
+        close-on-click-modal
+        draggable
+      >
+        <el-scrollbar>
+          <div class="dv-b">
+            <el-card>
+              <el-table
+                :data="trainedWeights"
+                row-key="id"
+                border
+                stripe
+                default-expand-all
+                @row-click="previewFile"
+              >
+                <el-table-column
+                  align="center"
+                  label="项目名称"
+                  prop="file_name"
+                  sortable
+                />
+                <el-table-column
+                  align="center"
+                  label="完成时间"
+                  prop="create_time"
+                  sortable
+                />
+                <el-table-column align="center" label="下载结果">
+                  <template v-slot="scope">
+                    <el-button
+                      :icon="Download"
+                      type="default"
+                      @click.stop="downloadFiles(scope.row)"
+                    >
+                      下载
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-card>
+          </div>
+        </el-scrollbar>
+
+        <template #footer>
+          <div class="dialog-footer">
+            <el-button type="primary" @click="showTrainedRecord = false">
+              关闭
+            </el-button>
+          </div>
+        </template>
+      </el-dialog>
+
+      <!-- 数据集补充 -->
+      <el-dialog
+        v-model="showDatasetsSupplement"
+        title="数据集详情"
+        width="75%"
+        align-center
+        close-on-press-escape
+        close-on-click-modal
+        draggable
+      >
+        <el-scrollbar>
+          <div class="dv-b">
+            <el-card>
+              <el-table
+                :data="datasetsList"
+                row-key="file_id"
+                border
+                stripe
+                default-expand-all
+                @row-click="previewFile"
+              >
+                <el-table-column
+                  align="center"
+                  label="数据集名称"
+                  prop="file_name"
+                  sortable
+                >
+                  <template v-slot="scope">
+                    <span>{{
+                      String(scope.row.file_name).includes(".")
+                        ? String(scope.row.file_name).split(".")[0]
+                        : scope.row.file_name
+                    }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column
+                  align="center"
+                  label="训练集数量"
+                  prop="last_train_counts"
+                  sortable
+                />
+                <el-table-column
+                  align="center"
+                  label="当前训练集数量"
+                  prop="train_counts"
+                  sortable
+                />
+                <el-table-column
+                  align="center"
+                  label="验证集数量"
+                  prop="last_val_counts"
+                  sortable
+                />
+                <el-table-column
+                  align="center"
+                  label="当前验证集数量"
+                  prop="val_counts"
+                  sortable
+                />
+                <el-table-column
+                  align="center"
+                  label="创建时间"
+                  prop="create_time"
+                  sortable
+                />
+                <el-table-column
+                  align="center"
+                  label="更新时间"
+                  prop="update_time"
+                  sortable
+                />
+                <el-table-column align="center" label="上传新数据">
+                  <template v-slot="scope">
+                    <el-button
+                      :icon="Upload"
+                      type="default"
+                      @click.stop="openRandomUpload(scope.row?.file_id)"
+                    >
+                      上传
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-card>
+          </div>
+        </el-scrollbar>
+      </el-dialog>
+
+      <!-- 训练结果示意图 -->
+      <el-dialog v-model="showTrainedImages" width="1000" align-center>
+        <div
+          class="hover:cursor-pointer flex justify-start"
+          @click="showType = !showType"
+        >
+          <el-text v-if="previewUrl.length > 0" class="mx-1" type="warning"
+            >切换预览模式</el-text
+          >
+        </div>
+        <!-- 大图预览模式 -->
+        <div
+          v-if="!showType && previewUrl.length > 0"
+          class="h-full w-full bg-gray-200 flex"
+        >
+          <div
+            class="w-[5%] hover:bg-white hover:cursor-pointer"
+            @click.stop="changePage(-1)"
+          />
+          <div class="w-[90%]">
+            <el-image
+              style="width: 100%; height: 100%; object-fit: contain"
+              :src="previewUrl[currentPage]"
+              :zoom-rate="1.2"
+              :max-scale="7"
+              :min-scale="0.2"
+              :preview-src-list="previewUrl"
+              show-progress
+              :initial-index="currentPage"
+              fit="contain"
+            />
+          </div>
+          <div
+            class="w-[5%] hover:bg-white hover:cursor-pointer"
+            @click.stop="changePage(1)"
+          />
+        </div>
+        <!-- 小图预览模式 -->
+        <div
+          v-if="showType && previewUrl.length > 0"
+          class="w-full h-full grid grid-cols-6 grid-rows-2 gap-2 p-4"
+        >
+          <div
+            v-for="(item, index) in previewUrl"
+            :key="index"
+            class="relative overflow-hidden rounded-lg border border-gray-200"
+          >
+            <el-image
+              class="w-full h-full object-cover"
+              :src="item"
+              :zoom-rate="1.2"
+              :max-scale="7"
+              :min-scale="0.2"
+              :preview-src-list="previewUrl"
+              :show-progress="true"
+              :initial-index="index"
+              fit="cover"
+            />
+          </div>
+        </div>
+
+        <template #footer>
+          <div class="dialog-footer">
+            <el-button type="primary" @click="showTrainedImages = false">
+              关闭
+            </el-button>
+          </div>
+        </template>
+      </el-dialog>
     </template>
     <div class="split-pane">
       <splitpane :splitSet="settingLR">
-        <!-- #paneL 表示指定该组件为左侧面板 -->
         <template #paneL>
-          <!-- 自定义左侧面板的内容 -->
-          <splitpane :splitSet="settingTB">
-            <template #paneL>
-              <el-scrollbar>
-                <div class="dv-b">
-                  <!-- <div> -->
-                  <!-- 有数据时显示详细信息 -->
-                  <!-- <div v-if="showRequireTrain" class="loader">
-                    点击开始训练
-                    <span />
-                  </div> -->
-                  <div v-if="showRequireTrainData" class="loader">
-                    等待训练进度
-                    <span />
-                  </div>
-
-                  <div v-if="currentTrainingData">
-                    <div>
-                      <!-- 进度条 -->
-                      <div class="progress-section">
-                        <div class="progress-info">
-                          <span
-                            >Epoch {{ currentTrainingData.epoch - 1 }}/{{
-                              currentTrainingData.total_epochs
-                            }}</span
-                          >
-                          <span
-                            v-if="
-                              currentTrainingData.epoch - 1 !=
-                              currentTrainingData.total_epochs
-                            "
-                            >{{ progressPercentage.toFixed(1) }}% ({{
-                              formatDuration(trainingElapsedTime)
-                            }})</span
-                          >
-                          <span
-                            v-if="
-                              currentTrainingData.epoch - 1 ===
-                              currentTrainingData.total_epochs
-                            "
-                          >
-                            <el-button
-                              type="success"
-                              @click.stop="downloadFiles('train_results')"
-                              >下载训练结果</el-button
-                            >
-                          </span>
-                        </div>
-                        <div class="progress-bar">
-                          <div
-                            class="progress-fill"
-                            :style="{ width: progressPercentage + '%' }"
-                          />
-                        </div>
-                        <div class="progress-details">
-                          <span>预计剩余: {{ estimatedTimeRemaining }}</span>
-                          <span>更新间隔: {{ timeSinceLastUpdate }}秒前</span>
-                        </div>
-                      </div>
-
-                      <!-- 指标卡片 -->
-                      <div class="metrics-grid">
-                        <div class="metric-card">
-                          <h4>📊 评估指标</h4>
-                          <div class="metrics">
-                            <div class="metric">
-                              <span>Precision:</span>
-                              <span>{{
-                                formatPercentage(
-                                  currentTrainingData.metrics.precision
-                                )
-                              }}</span>
-                            </div>
-                            <div class="metric">
-                              <span>Recall:</span>
-                              <span>{{
-                                formatPercentage(
-                                  currentTrainingData.metrics.recall
-                                )
-                              }}</span>
-                            </div>
-                            <div class="metric highlight">
-                              <span>mAP@0.5:</span>
-                              <span>{{
-                                formatPercentage(
-                                  currentTrainingData.metrics.mAP50
-                                )
-                              }}</span>
-                            </div>
-                            <div class="metric highlight">
-                              <span>mAP@0.5:0.95:</span>
-                              <span>{{
-                                formatPercentage(
-                                  currentTrainingData.metrics.mAP50_95
-                                )
-                              }}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div class="metric-card">
-                          <h4>🔥 训练损失</h4>
-                          <div class="metrics">
-                            <div class="metric">
-                              <span>Box:</span>
-                              <span>{{
-                                formatNumber(
-                                  currentTrainingData.train_losses.box_loss
-                                )
-                              }}</span>
-                            </div>
-                            <div class="metric">
-                              <span>Obj:</span>
-                              <span>{{
-                                formatNumber(
-                                  currentTrainingData.train_losses.obj_loss
-                                )
-                              }}</span>
-                            </div>
-                            <div class="metric">
-                              <span>Cls:</span>
-                              <span>{{
-                                formatNumber(
-                                  currentTrainingData.train_losses.cls_loss
-                                )
-                              }}</span>
-                            </div>
-                            <div class="metric total">
-                              <span>总计:</span>
-                              <span>{{
-                                formatNumber(
-                                  currentTrainingData.train_losses.total_loss
-                                )
-                              }}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div class="metric-card">
-                          <h4>✅ 验证损失</h4>
-                          <div class="metrics">
-                            <div class="metric">
-                              <span>Box:</span>
-                              <span>{{
-                                formatNumber(
-                                  currentTrainingData.val_losses.box_loss
-                                )
-                              }}</span>
-                            </div>
-                            <div class="metric">
-                              <span>Obj:</span>
-                              <span>{{
-                                formatNumber(
-                                  currentTrainingData.val_losses.obj_loss
-                                )
-                              }}</span>
-                            </div>
-                            <div class="metric">
-                              <span>Cls:</span>
-                              <span>{{
-                                formatNumber(
-                                  currentTrainingData.val_losses.cls_loss
-                                )
-                              }}</span>
-                            </div>
-                            <div class="metric total">
-                              <span>总计:</span>
-                              <span>{{
-                                formatNumber(
-                                  currentTrainingData.val_losses.total_loss
-                                )
-                              }}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div class="metric-card">
-                          <h4>⚙️ 其他信息</h4>
-                          <div class="metrics">
-                            <div class="metric">
-                              <span>学习率:</span>
-                              <span>{{
-                                formatNumber(
-                                  currentTrainingData.learning_rate,
-                                  6
-                                )
-                              }}</span>
-                            </div>
-                            <div class="metric">
-                              <span>运行时间:</span>
-                              <span>{{
-                                formatDuration(trainingElapsedTime)
-                              }}</span>
-                            </div>
-                            <div class="metric">
-                              <span>最后更新:</span>
-                              <span>{{
-                                formatTime(currentTrainingData.timestamp)
-                              }}</span>
-                            </div>
-                            <div class="metric">
-                              <span>监控状态:</span>
-                              <span
-                                :class="{
-                                  'text-success': isProgressHealthy,
-                                  'text-danger': !isProgressHealthy
-                                }"
-                              >
-                                {{ isProgressHealthy ? "正常" : "异常" }}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <!-- 大图预览模式 -->
-                  <div
-                    v-if="!showType && previewUrl.length > 0"
-                    class="h-full w-full bg-gray-200 flex"
-                  >
-                    <div
-                      class="w-[5%] hover:bg-white hover:cursor-pointer"
-                      @click.stop="changePage(-1)"
-                    />
-                    <div class="w-[90%]">
-                      <el-image
-                        style="width: 100%; height: 100%; object-fit: contain"
-                        :src="previewUrl[currentPage]"
-                        :zoom-rate="1.2"
-                        :max-scale="7"
-                        :min-scale="0.2"
-                        :preview-src-list="previewUrl"
-                        show-progress
-                        :initial-index="currentPage"
-                        fit="contain"
-                      />
-                    </div>
-                    <div
-                      class="w-[5%] hover:bg-white hover:cursor-pointer"
-                      @click.stop="changePage(1)"
-                    />
-                  </div>
-                  <!-- 小图预览模式 -->
-                  <div
-                    v-if="showType && previewUrl.length > 0"
-                    class="w-full h-full grid grid-cols-6 grid-rows-2 gap-2 p-4"
-                  >
-                    <div
-                      v-for="(item, index) in previewUrl"
-                      :key="index"
-                      class="relative overflow-hidden rounded-lg border border-gray-200"
-                    >
-                      <el-image
-                        class="w-full h-full object-cover"
-                        :src="item"
-                        :zoom-rate="1.2"
-                        :max-scale="7"
-                        :min-scale="0.2"
-                        :preview-src-list="previewUrl"
-                        :show-progress="true"
-                        :initial-index="index"
-                        fit="cover"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </el-scrollbar>
-            </template>
-
-            <template #paneR>
-              <el-scrollbar>
-                <div class="dv-b">
-                  <!-- 日志区域 -->
-                  <div class="log-section">
-                    <div class="log-header">
-                      <el-text class="mx-1" type="info">操作日志</el-text>
-                      <div class="log-controls">
-                        <el-button type="info" round plain @click="clearLogs"
-                          >🗑️ 清空</el-button
-                        >
-                        <el-button
-                          type="success"
-                          round
-                          plain
-                          @click="downloadFiles('train_log')"
-                          >💾 导出</el-button
-                        >
-                      </div>
-                    </div>
-                    <div ref="logContainer" class="log-container">
-                      <div
-                        v-for="(log, index) in logs"
-                        :key="index"
-                        class="log-entry"
-                        :class="log.type"
-                      >
-                        <span class="log-time">{{
-                          formatLogTime(log.timestamp)
-                        }}</span>
-                        <span class="log-message">{{ log.message }}</span>
-                      </div>
-                      <div v-if="logs.length === 0" class="log-empty">
-                        暂无日志记录
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </el-scrollbar>
-            </template>
-          </splitpane>
-        </template>
-        <!-- #paneR 表示指定该组件为右侧面板 -->
-
-        <template #paneR>
-          <!-- 文件上传 -->
-          <el-dialog
-            v-model="showFileUpload"
-            :title="
-              uploadMode === 'folder'
-                ? '上传到当前文件夹'
-                : '上传数据集压缩文件'
-            "
-            width="30%"
-            @close="closeDialog"
-          >
-            <el-upload
-              v-model:file-list="uploadFileList"
-              :auto-upload="false"
-              :on-change="handleFileChangeUnified"
-              action="#"
-              class="upload-container"
-              drag
-              multiple
-            >
-              <el-icon class="el-icon--upload">
-                <upload-filled />
-              </el-icon>
-              <div class="el-upload__text">
-                拖拽文件到此处或 <em>点击上传</em>
-              </div>
-              <template #tip>
-                <div class="el-upload__tip">
-                  支持上传zip、rar、7z压缩文件，总大小不超过100MB。
-                </div>
-              </template>
-            </el-upload>
-
-            <template #footer>
-              <span class="dialog-footer">
-                <el-button @click="closeDialog">取消</el-button>
-                <el-button
-                  :loading="uploading"
-                  type="primary"
-                  @click="submitFilesUpload"
+          <!-- <el-scrollbar> 训练指标 </el-scrollbar> -->
+          <div class="flex flex-col h-full">
+            <!-- 统计指标 -->
+            <div class="flex-[9] flex flex-col h-full">
+              <div
+                v-if="currentTrainMetrics && currentTrainMetrics"
+                class="flex flex-col h-full"
+              >
+                <div
+                  class="flex-[0.5] border-pink-300 border-b-2 flex items-center justify-center text-2xl"
                 >
-                  上传
-                </el-button>
-              </span>
-            </template>
-          </el-dialog>
-
-          <!-- 训练记录展示 -->
-          <el-dialog
-            v-model="showTrainedRecord"
-            title="训练记录"
-            width="1000"
-            align-center
-            close-on-press-escape
-            close-on-click-modal
-            draggable
-          >
-            <el-scrollbar>
-              <div class="dv-b">
-                <el-card>
-                  <el-table
-                    :data="trainedWeights"
-                    row-key="file_id"
-                    border
-                    stripe
-                    default-expand-all
-                    @row-click="previewFile"
+                  <div>性能指标</div>
+                </div>
+                <div class="flex-[9.5]">
+                  <div
+                    class="grid grid-cols-3 grid-rows-3 gap-2 w-full h-full flex-1"
+                    v-if="currentTrainMetrics && currentTrainMetrics"
                   >
-                    <el-table-column
-                      align="center"
-                      label="项目名称"
-                      prop="file_name"
-                      sortable
-                    />
-                    <el-table-column
-                      align="center"
-                      label="完成时间"
-                      prop="create_time"
-                      sortable
-                    />
-                    <el-table-column align="center" label="下载结果">
-                      <template v-slot="scope">
-                        <el-button
-                          :icon="Download"
-                          type="default"
-                          @click.stop="downloadFiles(scope.row)"
-                        >
-                          下载
-                        </el-button>
-                      </template>
-                    </el-table-column>
-                  </el-table>
-                </el-card>
-              </div>
-            </el-scrollbar>
-
-            <template #footer>
-              <div class="dialog-footer">
-                <el-button type="primary" @click="showTrainedRecord = false">
-                  关闭
-                </el-button>
-              </div>
-            </template>
-          </el-dialog>
-
-          <!-- 数据集补充 -->
-          <el-dialog
-            v-model="showDatasetsSupplement"
-            title="数据集详情"
-            width="75%"
-            align-center
-            close-on-press-escape
-            close-on-click-modal
-            draggable
-          >
-            <el-scrollbar>
-              <div class="dv-b">
-                <el-card>
-                  <el-table
-                    :data="datasetsList"
-                    row-key="file_id"
-                    border
-                    stripe
-                    default-expand-all
-                    @row-click="previewFile"
-                  >
-                    <el-table-column
-                      align="center"
-                      label="数据集名称"
-                      prop="file_name"
-                      sortable
-                    >
-                      <template v-slot="scope">
-                        <span>{{
-                          String(scope.row.file_name).includes(".")
-                            ? String(scope.row.file_name).split(".")[0]
-                            : scope.row.file_name
-                        }}</span>
-                      </template>
-                    </el-table-column>
-                    <el-table-column
-                      align="center"
-                      label="训练集数量"
-                      prop="last_train_counts"
-                      sortable
-                    />
-                    <el-table-column
-                      align="center"
-                      label="当前训练集数量"
-                      prop="train_counts"
-                      sortable
-                    />
-                    <el-table-column
-                      align="center"
-                      label="验证集数量"
-                      prop="last_val_counts"
-                      sortable
-                    />
-                    <el-table-column
-                      align="center"
-                      label="当前验证集数量"
-                      prop="val_counts"
-                      sortable
-                    />
-                    <el-table-column
-                      align="center"
-                      label="创建时间"
-                      prop="create_time"
-                      sortable
-                    />
-                    <el-table-column
-                      align="center"
-                      label="更新时间"
-                      prop="update_time"
-                      sortable
-                    />
-                    <el-table-column align="center" label="上传新数据">
-                      <template v-slot="scope">
-                        <el-button
-                          :icon="Upload"
-                          type="default"
-                          @click.stop="openRandomUpload(scope.row?.file_id)"
-                        >
-                          上传
-                        </el-button>
-                      </template>
-                    </el-table-column>
-                  </el-table>
-                </el-card>
-              </div>
-            </el-scrollbar>
-          </el-dialog>
-
-          <!-- 训练结果示意图 -->
-          <el-dialog v-model="showTrainedImages" width="1000" align-center>
-            <div
-              class="hover:cursor-pointer flex justify-start"
-              @click="showType = !showType"
-            >
-              <el-text v-if="previewUrl.length > 0" class="mx-1" type="warning"
-                >切换预览模式</el-text
-              >
-            </div>
-            <!-- 大图预览模式 -->
-            <div
-              v-if="!showType && previewUrl.length > 0"
-              class="h-full w-full bg-gray-200 flex"
-            >
-              <div
-                class="w-[5%] hover:bg-white hover:cursor-pointer"
-                @click.stop="changePage(-1)"
-              />
-              <div class="w-[90%]">
-                <el-image
-                  style="width: 100%; height: 100%; object-fit: contain"
-                  :src="previewUrl[currentPage]"
-                  :zoom-rate="1.2"
-                  :max-scale="7"
-                  :min-scale="0.2"
-                  :preview-src-list="previewUrl"
-                  show-progress
-                  :initial-index="currentPage"
-                  fit="contain"
-                />
-              </div>
-              <div
-                class="w-[5%] hover:bg-white hover:cursor-pointer"
-                @click.stop="changePage(1)"
-              />
-            </div>
-            <!-- 小图预览模式 -->
-            <div
-              v-if="showType && previewUrl.length > 0"
-              class="w-full h-full grid grid-cols-6 grid-rows-2 gap-2 p-4"
-            >
-              <div
-                v-for="(item, index) in previewUrl"
-                :key="index"
-                class="relative overflow-hidden rounded-lg border border-gray-200"
-              >
-                <el-image
-                  class="w-full h-full object-cover"
-                  :src="item"
-                  :zoom-rate="1.2"
-                  :max-scale="7"
-                  :min-scale="0.2"
-                  :preview-src-list="previewUrl"
-                  :show-progress="true"
-                  :initial-index="index"
-                  fit="cover"
-                />
-              </div>
-            </div>
-
-            <template #footer>
-              <div class="dialog-footer">
-                <el-button type="primary" @click="showTrainedImages = false">
-                  关闭
-                </el-button>
-              </div>
-            </template>
-          </el-dialog>
-
-          <div class="dv-b flex flex-col h-full">
-            <el-scrollbar>
-              <div class="dv-b">
-                <el-card style="height: 100vh">
-                  <el-form
-                    ref="formRef"
-                    style="max-width: 600px"
-                    :model="config"
-                    label-width="auto"
-                    class="demo-config"
-                  >
-                    <el-form-item>
-                      <!-- 开始训练 -->
-                      <el-button
-                        type="success"
-                        :disabled="
-                          !apiConnected ||
-                          hasActiveTraining ||
-                          isOperationInProgress
-                        "
-                        plain
-                        @click.stop="startTraining"
+                    <div class="border flex items-center justify-center p-2">
+                      <div
+                        class="statistic-card flex flex-col justify-center w-full"
                       >
-                        {{
-                          hasActiveTraining
-                            ? "训练进行中..."
-                            : isOperationInProgress
-                              ? "启动中..."
-                              : "🚀 开始训练"
-                        }}
-                      </el-button>
+                        <div>
+                          <el-statistic
+                            :value="currentTrainMetrics['train/box_loss']"
+                          >
+                            <template #title>
+                              <div class="inline-flex items-center text-xl">
+                                Train/Box_loss
+                                <el-tooltip
+                                  effect="dark"
+                                  content="边界框回归的损失（Box Loss），表示预测边界框与真实边界框的偏差。数值越小，说明模型预测的边界框位置越接近于真实位置。当损失值逐渐下降时，就说明模型在学习边界框预测。"
+                                  placement="top"
+                                >
+                                  <el-icon style="margin-left: 4px" :size="12">
+                                    <Warning />
+                                  </el-icon>
+                                </el-tooltip>
+                              </div>
+                            </template>
+                          </el-statistic>
+                        </div>
 
-                      <!-- 停止训练 -->
-                      <!-- <el-button
-                        type="danger"
-                        :disabled="
-                          !apiConnected ||
-                          hasActiveTraining ||
-                          isOperationInProgress
-                        "
-                        plain
-                        @click.stop="startTraining"
-                      >
-                        停止训练
-                      </el-button> -->
-
-                      <el-button
-                        type="info"
-                        plain
-                        @click.stop="resetConfig(formRef)"
-                        >重置参数</el-button
-                      >
-                      <el-button
-                        type="info"
-                        plain
-                        @click.stop="showTrainedRecord = true"
-                        >训练记录</el-button
-                      >
-                    </el-form-item>
-                    <el-form-item label="项目名称" prop="name">
-                      <el-input
-                        v-model.number="config.name"
-                        type="text"
-                        autocomplete="off"
-                      />
-                    </el-form-item>
-                    <el-form-item label="数据集" prop="trainData">
-                      <el-select
-                        v-model="config.trainData"
-                        placeholder="请选择或上传数据集"
-                      >
-                        <el-option
-                          v-for="(item, index) in datasetsOptions"
-                          :key="index"
-                          :label="item.label"
-                          :value="item.value"
-                        />
-                      </el-select>
-                      <div class="flex">
-                        <el-button
-                          class="rounded-lg transition-all duration-200 transform hover:scale-130"
-                          size="small"
-                          type="text"
-                          style="font-size: 10"
-                          @click.stop="openRandomUpload(null)"
-                          >上传数据集</el-button
-                        >
-                        <el-button
-                          class="rounded-lg transition-all duration-200 transform hover:scale-130"
-                          size="small"
-                          type="text"
-                          @click.stop="showDatasetsSupplement = true"
-                          style="font-size: 10"
-                          >数据集补充</el-button
-                        >
-                        <el-button
-                          class="rounded-lg transition-all duration-200 transform hover:scale-130"
-                          size="small"
-                          type="text"
-                          @click.stop="downloadFiles('example')"
-                          style="font-size: 10"
-                          >下载数据集样本</el-button
-                        >
+                        <div class="statistic-footer">
+                          <div class="footer-item">
+                            <span>上一轮次</span>
+                            <span class="green">
+                              {{ lastTrainMetrics["train/box_loss"] }}
+                              <el-icon>
+                                <CaretTop />
+                              </el-icon>
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                    </el-form-item>
-                    <el-form-item label="模型类型" prop="type">
-                      <el-select
-                        v-model="config.type"
-                        placeholder="选择训练模型"
+                    </div>
+                    <div class="border flex items-center justify-center p-2">
+                      <div
+                        class="statistic-card flex flex-col justify-center w-full"
                       >
-                        <el-option label="YOLO" value="yolo" />
-                        <el-option label="RT-DETR" value="detr" />
-                      </el-select>
-                    </el-form-item>
-
-                    <el-form-item label="版本" prop="version">
-                      <el-select
-                        v-model="config.version"
-                        placeholder="选择训练版本"
+                        <el-statistic
+                          :value="currentTrainMetrics['train/cls_loss']"
+                        >
+                          <template #title>
+                            <div class="inline-flex items-center text-xl">
+                              Train/Cls_loss
+                              <el-tooltip
+                                effect="dark"
+                                content="分类损失（Classification Loss），表示预测的目标类别与真实类别之间的偏差。数值越小，说明模型分类性能越好。当训练时分类损失值逐步下降，表明模型分类能力逐渐提升。"
+                                placement="top"
+                              >
+                                <el-icon style="margin-left: 4px" :size="12">
+                                  <Warning />
+                                </el-icon>
+                              </el-tooltip>
+                            </div>
+                          </template>
+                        </el-statistic>
+                        <div class="statistic-footer">
+                          <div class="footer-item">
+                            <span>上一轮次</span>
+                            <span class="red">
+                              {{ lastTrainMetrics["train/cls_loss"] }}
+                              <el-icon>
+                                <CaretBottom />
+                              </el-icon>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="border flex items-center justify-center p-2">
+                      <div
+                        class="statistic-card flex flex-col justify-center w-full"
                       >
-                        <el-option label="YOLOv8" value="YOLOv8" />
-                        <el-option label="YOLOv11" value="YOLOv11" />
-                        <el-option label="YOLOv12" value="YOLOv12" />
-                        <el-option label="ChipsYOLO" value="ChipsYOLO" />
-                      </el-select>
-                    </el-form-item>
-
-                    <el-form-item label="训练设备" prop="device">
-                      <el-select
-                        v-model="config.device"
-                        placeholder="选择训练设备"
+                        <el-statistic
+                          :value="currentTrainMetrics['train/dfl_loss']"
+                          title="New transactions today"
+                        >
+                          <template #title>
+                            <div class="inline-flex items-center text-xl">
+                              Train/Dfl_loss
+                              <el-tooltip
+                                effect="dark"
+                                content="分布焦点损失（Distribution Focal Loss），YOLOv8中特有的损失，用于优化边界框预测的精确性。当损失下降表示模型更好地聚焦于关键预测区域，提高边界框的质量。"
+                                placement="top"
+                              >
+                                <el-icon style="margin-left: 4px" :size="12">
+                                  <Warning />
+                                </el-icon>
+                              </el-tooltip>
+                            </div>
+                          </template>
+                        </el-statistic>
+                        <div class="statistic-footer">
+                          <div class="footer-item">
+                            <span>上一轮次</span>
+                            <span class="green">
+                              {{ lastTrainMetrics["train/dfl_loss"] }}
+                              <el-icon>
+                                <CaretTop />
+                              </el-icon>
+                            </span>
+                          </div>
+                          <div class="footer-item">
+                            <el-icon :size="14">
+                              <ArrowRight />
+                            </el-icon>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="border flex items-center justify-center p-2">
+                      <div
+                        class="statistic-card flex flex-col justify-center w-full"
                       >
-                        <el-option label="CPU" value="cpu" />
-                        <el-option label="GPU" value="gpu" />
-                      </el-select>
-                    </el-form-item>
-
-                    <el-form-item label="图像尺寸" prop="size">
-                      <el-input
-                        v-model.number="config.size"
-                        type="text"
-                        placeholder="请输入图像尺寸"
-                      />
-                    </el-form-item>
-
-                    <el-form-item label="批次大小" prop="batch">
-                      <el-input
-                        v-model.number="config.batch"
-                        placeholder="请输入批次大小"
-                      />
-                    </el-form-item>
-
-                    <el-form-item label="学习率" prop="lr">
-                      <el-input
-                        v-model.number="config.lr"
-                        placeholder="请输入学习率"
-                      />
-                    </el-form-item>
-
-                    <el-form-item label="训练次数" prop="epoch">
-                      <el-input
-                        v-model.number="config.epoch"
-                        placeholder="请输入训练次数"
-                      />
-                    </el-form-item>
-                    <!-- @click="submitForm(formRef)" -->
-                  </el-form>
-                </el-card>
+                        <el-statistic
+                          :value="currentTrainMetrics['val/box_loss']"
+                        >
+                          <template #title>
+                            <div class="inline-flex items-center text-xl">
+                              Val/Box_loss
+                              <el-tooltip
+                                effect="dark"
+                                content="边界框回归的损失（Box Loss），表示预测边界框与真实边界框的偏差。数值越小，说明模型预测的边界框位置越接近于真实位置。当损失值逐渐下降时，就说明模型在学习边界框预测。"
+                                placement="top"
+                              >
+                                <el-icon style="margin-left: 4px" :size="12">
+                                  <Warning />
+                                </el-icon>
+                              </el-tooltip>
+                            </div>
+                          </template>
+                        </el-statistic>
+                        <div class="statistic-footer">
+                          <div class="footer-item">
+                            <span>上一轮次</span>
+                            <span class="green">
+                              {{ lastTrainMetrics["val/box_loss"] }}
+                              <el-icon>
+                                <CaretTop />
+                              </el-icon>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="border flex items-center justify-center p-2">
+                      <div
+                        class="statistic-card flex flex-col justify-center w-full"
+                      >
+                        <el-statistic
+                          :value="currentTrainMetrics['val/cls_loss']"
+                        >
+                          <template #title>
+                            <div class="inline-flex items-center text-xl">
+                              Val/Cls_loss
+                              <el-tooltip
+                                effect="dark"
+                                content="分类损失（Classification Loss），表示预测的目标类别与真实类别之间的偏差。数值越小，说明模型分类性能越好。当训练时分类损失值逐步下降，表明模型分类能力逐渐提升。"
+                                placement="top"
+                              >
+                                <el-icon style="margin-left: 4px" :size="12">
+                                  <Warning />
+                                </el-icon>
+                              </el-tooltip>
+                            </div>
+                          </template>
+                        </el-statistic>
+                        <div class="statistic-footer">
+                          <div class="footer-item">
+                            <span>上一轮次</span>
+                            <span class="red">
+                              {{ lastTrainMetrics["val/cls_loss"] }}
+                              <el-icon>
+                                <CaretBottom />
+                              </el-icon>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="border flex items-center justify-center p-2">
+                      <div
+                        class="statistic-card flex flex-col justify-center w-full"
+                      >
+                        <el-statistic
+                          :value="currentTrainMetrics['val/dfl_loss']"
+                          title="New transactions today"
+                        >
+                          <template #title>
+                            <div class="inline-flex items-center text-xl">
+                              Val/Dfl_loss
+                              <el-tooltip
+                                effect="dark"
+                                content="分布焦点损失（Distribution Focal Loss），YOLOv8中特有的损失，用于优化边界框预测的精确性。当损失下降表示模型更好地聚焦于关键预测区域，提高边界框的质量。"
+                                placement="top"
+                              >
+                                <el-icon style="margin-left: 4px" :size="12">
+                                  <Warning />
+                                </el-icon>
+                              </el-tooltip>
+                            </div>
+                          </template>
+                        </el-statistic>
+                        <div class="statistic-footer">
+                          <div class="footer-item">
+                            <span>上一轮次</span>
+                            <span class="green">
+                              {{ lastTrainMetrics["val/dfl_loss"] }}
+                              <el-icon>
+                                <CaretTop />
+                              </el-icon>
+                            </span>
+                          </div>
+                          <div class="footer-item">
+                            <el-icon :size="14">
+                              <ArrowRight />
+                            </el-icon>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="border flex items-center justify-center p-2">
+                      <div
+                        class="statistic-card flex flex-col justify-center w-full"
+                      >
+                        <el-statistic
+                          :value="currentTrainMetrics['metrics/precision(B)']"
+                        >
+                          <template #title>
+                            <div class="inline-flex items-center text-xl">
+                              Metrics/Precision(B)
+                              <el-tooltip
+                                effect="dark"
+                                content="精度（Precision），表示模型预测为正样本的准确性。数值越高越好。在训练初期波动较大，后来趋于稳定并逐步提高。B，固定置信度（0.5）"
+                                placement="top"
+                              >
+                                <el-icon style="margin-left: 4px" :size="12">
+                                  <Warning />
+                                </el-icon>
+                              </el-tooltip>
+                            </div>
+                          </template>
+                        </el-statistic>
+                        <div class="statistic-footer">
+                          <div class="footer-item">
+                            <span>上一轮次</span>
+                            <span class="green">
+                              {{ lastTrainMetrics["metrics/precision(B)"] }}
+                              <el-icon>
+                                <CaretTop />
+                              </el-icon>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="border flex items-center justify-center p-2">
+                      <div
+                        class="statistic-card flex flex-col justify-center w-full"
+                      >
+                        <el-statistic
+                          :value="currentTrainMetrics['metrics/recall(B)']"
+                        >
+                          <template #title>
+                            <div class="inline-flex items-center text-xl">
+                              Metrics/Recall(B)
+                              <el-tooltip
+                                effect="dark"
+                                content="召回率（Recall），表示真实正样本中被正确预测为正样本的比例。数值越高越好。召回率提升，说明模型对正样本的捕获能力提高。不能漏掉正样本"
+                                placement="top"
+                              >
+                                <el-icon style="margin-left: 4px" :size="12">
+                                  <Warning />
+                                </el-icon>
+                              </el-tooltip>
+                            </div>
+                          </template>
+                        </el-statistic>
+                        <div class="statistic-footer">
+                          <div class="footer-item">
+                            <span>上一轮次</span>
+                            <span class="red">
+                              {{ lastTrainMetrics["metrics/recall(B)"] }}
+                              <el-icon>
+                                <CaretBottom />
+                              </el-icon>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="border flex items-center justify-center p-2">
+                      <div
+                        class="statistic-card flex flex-col justify-center w-full"
+                      >
+                        <el-statistic
+                          :value="currentTrainMetrics['metrics/mAP50(B)']"
+                          title="New transactions today"
+                        >
+                          <template #title>
+                            <div class="inline-flex items-center text-xl">
+                              Metrics/mAP50(B)
+                              <el-tooltip
+                                effect="dark"
+                                content="在 IoU（交并比）阈值为 0.5 时的平均精度。它是对每个类别的 AP（Average Precision）取平均值。 数值越高越好，表示模型在检测目标时的总体表现。 mAP50 在不断提高，说明模型检测能力越来越好。(B) 表示这是针对 Bounding Box（边界框） 的评估指标。"
+                                placement="top"
+                              >
+                                <el-icon style="margin-left: 4px" :size="12">
+                                  <Warning />
+                                </el-icon>
+                              </el-tooltip>
+                            </div>
+                          </template>
+                        </el-statistic>
+                        <div class="statistic-footer">
+                          <div class="footer-item">
+                            <span>上一轮次</span>
+                            <span class="green">
+                              {{ lastTrainMetrics["metrics/mAP50(B)"] }}
+                              <el-icon>
+                                <CaretTop />
+                              </el-icon>
+                            </span>
+                          </div>
+                          <div class="footer-item">
+                            <el-icon :size="14">
+                              <ArrowRight />
+                            </el-icon>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </el-scrollbar>
+            </div>
+            <!-- 进度条 -->
+            <div
+              class="flex-[1] items-center h-full"
+              v-if="currentTrainMetrics && currentTrainMetrics"
+            >
+              <div class="flex flex-col h-full">
+                <div class="w-full">
+                  <el-progress
+                    :text-inside="true"
+                    :stroke-width="24"
+                    :percentage="(currentEpoch / trainParams.epochs) * 100"
+                    status="success"
+                  />
+                </div>
+                <div class="flex justify-between">
+                  <div>
+                    预计剩余
+                    {{
+                      formatTimeSimple(
+                        trainingInterval * (trainParams.epochs - currentEpoch)
+                      )
+                    }}
+                  </div>
+                  <div>第 {{ currentEpoch }}/{{ trainParams.epochs }} 轮</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- #paneR 表示指定该组件为右侧面板 -->
+        <template #paneR>
+          <div class="dv-b flex flex-col h-full">
+            <!-- 日志区域 -->
+            <pre ref="logBox" class="log" v-if="trainLogConsoleContent">{{
+              trainLogConsoleContent
+            }}</pre>
           </div>
         </template>
       </splitpane>
@@ -1952,7 +1332,7 @@ const changePage = op => {
 .split-pane {
   width: 100%;
   height: calc(100vh - 300px);
-  font-size: 50px;
+  font-image_size: 50px;
   text-align: center;
   border: 1px solid #e5e6eb;
 
@@ -1987,7 +1367,7 @@ const changePage = op => {
   display: flex;
   gap: 8px;
   align-items: center;
-  font-size: 14px;
+  font-image_size: 14px;
   color: #666;
 }
 
@@ -1999,7 +1379,7 @@ const changePage = op => {
   background-color: #28a745;
 }
 
-.config-section,
+.trainParams-section,
 .training-status,
 .log-section {
   max-width: 100%;
@@ -2012,19 +1392,19 @@ const changePage = op => {
   }
 
   .header,
-  .config-section,
+  .trainParams-section,
   .training-status,
   .log-section {
     padding: 15px;
   }
 
   .header h1 {
-    font-size: 20px;
+    font-image_size: 20px;
   }
 
-  .config-section h3,
+  .trainParams-section h3,
   .training-status h3 {
-    font-size: 18px;
+    font-image_size: 18px;
   }
 }
 
@@ -2040,7 +1420,7 @@ const changePage = op => {
 .log-section h3 {
   padding-bottom: 10px;
   margin-bottom: 20px;
-  font-size: 18px;
+  font-image_size: 18px;
   font-weight: 600;
   color: #333;
   text-align: center;
@@ -2055,7 +1435,7 @@ const changePage = op => {
   padding: 20px;
   overflow-y: auto;
   font-family: "JetBrains Mono", "Courier New", monospace;
-  font-size: 13px;
+  font-image_size: 13px;
   line-height: 1.5;
   color: #d4d4d4;
   background: #1e1e1e;
@@ -2116,7 +1496,7 @@ const changePage = op => {
 
 .connection-warning .warning-content h4 {
   margin: 0 0 15px;
-  font-size: 18px;
+  font-image_size: 18px;
   color: #721c24;
 }
 
@@ -2169,7 +1549,7 @@ const changePage = op => {
   display: flex;
   justify-content: space-between;
   margin-bottom: 12px;
-  font-size: 15px;
+  font-image_size: 15px;
   font-weight: 600;
   color: #555;
 }
@@ -2194,7 +1574,7 @@ const changePage = op => {
   display: flex;
   justify-content: space-between;
   margin-top: 8px;
-  font-size: 12px;
+  font-image_size: 12px;
   color: #6c757d;
 }
 
@@ -2222,7 +1602,7 @@ const changePage = op => {
 
 .metric-card h4 {
   margin: 0 0 15px;
-  font-size: 16px;
+  font-image_size: 16px;
   color: #333;
 }
 
@@ -2235,7 +1615,7 @@ const changePage = op => {
 .metric {
   display: flex;
   justify-content: space-between;
-  font-size: 14px;
+  font-image_size: 14px;
 }
 
 .metric span:first-child {
@@ -2270,7 +1650,7 @@ const changePage = op => {
   text-align: center;
   line-height: 150px;
   font-family: sans-serif;
-  font-size: 20px;
+  font-image_size: 20px;
   color: #0066ff;
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -2334,5 +1714,86 @@ const changePage = op => {
   100% {
     transform: rotate(405deg);
   }
+}
+
+/* 1. 修改输入框内已选中内容的样式 */
+::v-deep .el-input__inner {
+  color: #626aef; /* 输入框字体颜色 */
+  font-image_size: 14px; /* 输入框字体大小 */
+}
+
+/* 2. 修改下拉面板中选项的样式（未选中状态） */
+::v-deep .el-select-dropdown__item {
+  color: #333; /* 未选中选项的字体颜色 */
+  font-image_size: 13px; /* 未选中选项的字体大小 */
+}
+
+/* 3. 修改下拉面板中选中选项的样式（高亮状态） */
+::v-deep .el-select-dropdown__item.selected {
+  color: #626aef; /* 选中选项的字体颜色 */
+  font-weight: bold; /* 选中选项加粗（可选） */
+}
+
+/* 4. 可选：修改下拉面板的整体样式（如背景、边框等） */
+::v-deep .el-select-dropdown {
+  background: #fafafa; /* 下拉面板背景色 */
+  border: 1px solid #eee; /* 下拉面板边框 */
+}
+
+// 统计组件
+:global(h2#card-usage ~ .example .example-showcase) {
+  background-color: var(--el-fill-color) !important;
+}
+
+.el-statistic {
+  --el-statistic-content-font-size: 28px;
+}
+
+.statistic-card {
+  height: 100%;
+  padding: 20px;
+  border-radius: 4px;
+  background-color: var(--el-bg-color-overlay);
+}
+
+.statistic-footer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+}
+
+.statistic-footer .footer-item {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.statistic-footer .footer-item span:last-child {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+}
+
+.green {
+  color: var(--el-color-success);
+}
+.red {
+  color: var(--el-color-error);
+}
+
+.log {
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.4;
+  overflow: auto; /* 关键：可滚动容器 */
+  padding: 8px 12px;
+  background: #fafafa;
+  border-radius: 6px;
 }
 </style>

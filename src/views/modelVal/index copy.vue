@@ -17,15 +17,6 @@ import {
   ArrowRight
 } from "@element-plus/icons-vue";
 import { downloadByData } from "@pureadmin/utils";
-import {
-  getStorage,
-  deleteFiles,
-  FilesType,
-  predictFiles,
-  showPredictions,
-  validateWeights,
-  showValidations
-} from "@/api/ultralytics.ts";
 
 defineOptions({
   name: "ModelVal"
@@ -43,10 +34,6 @@ const settingTB: ContextProps = reactive({
   split: "horizontal"
 });
 
-const storageData = ref([]);
-const loading = ref(false);
-const selectList = ref([]);
-
 const tableData = ref([]);
 const pageSize = ref(16);
 const pageNum = ref(1);
@@ -60,19 +47,18 @@ const weightsData = ref([]);
 const sortProp = ref("");
 const sortOrder = ref("");
 const fileName = ref("");
-const currentFile = ref(null);
-const validationsResultsData = ref([]);
+// const currentFile = ref(null);
+const valTableData = ref([]);
 const modelOptions = ref([]);
 const modelValue = ref(""); // 先给空值
 
-const validationsDatasets = ref([]);
-const dataset_id = ref(null); // 先给空值
-const validationConf = ref("0.25");
+const dataYamlOptions = ref([]);
+const dataYamlId = ref(""); // 先给空值
 
 const showType = ref(false); //展示类型 True 单张展示， False 全部展示
 const visible = ref(false);
 const formValues = ref({});
-const validationConditionsColumns = ref([]);
+const columns = ref([]);
 const currentPage = ref(0); // 切图
 const previewUrl = ref([]);
 const fileRow = ref(null);
@@ -95,11 +81,10 @@ const getTableData = () => {
           allData.value = data.data;
           // 待验证的模型
           weightsData.value = allData.value.filter(
-            item =>
-              String(item.file_name).includes("pt") &&
-              String(item.file_id).includes("weight")
+            item => String(item.file_name).includes("pt") && String(item.file_id).includes("weight")
           );
           console.log("weightsData:", weightsData.value);
+
 
           modelOptions.value = weightsData.value.map(item => ({
             value: item.file_id,
@@ -111,19 +96,44 @@ const getTableData = () => {
           }
 
           // 待验证的数据集文件
-          validationsDatasets.value = allData.value
-            .filter(
-              item =>
-                item.file_comment == "upload_yamls" ||
-                String(item.file_id).includes("yaml")
-            )
+          dataYamlOptions.value = allData.value
+            .filter(item => item.file_comment == "upload_yamls" || String(item.file_id).includes("yaml"))
             .map(item => ({
               value: item.file_id,
               label: item.file_name
             }));
-          if (validationsDatasets.value.length > 0) {
-            dataset_id.value = validationsDatasets.value[0].value;
+          if (dataYamlOptions.value.length > 0) {
+            dataYamlId.value = dataYamlOptions.value[0].value;
           }
+
+          columns.value = [
+            {
+              label: "数据集",
+              width: 120,
+              prop: "dataYamlId",
+              valueType: "select",
+              options: dataYamlOptions.value
+            },
+            {
+              label: "置信度",
+              prop: "conf",
+              valueType: "radio",
+              options: [
+                {
+                  label: "0.25",
+                  value: "0.25"
+                },
+                {
+                  label: "0.5",
+                  value: "0.5"
+                },
+                {
+                  label: "0.75",
+                  value: "0.75"
+                }
+              ]
+            }
+          ];
 
           filterAndSortData();
         }
@@ -205,6 +215,75 @@ const handleSortChange = column => {
   filterAndSortData();
 };
 
+const previewFile = async file => {
+  previewUrl.value = [];
+  currentPage.value = 0;
+  // currentFile.value = file;
+  if (String(file.file_id).includes("folder")) {
+    return;
+  }
+  // 读取图像的函数
+  try {
+    const res = await axios.get(`${API_URL}/show_image/${file.file_id}`);
+    console.log("res", res.data.data);
+    valTableData.value = [res.data.data.metrics]; // 直接更新响应式变量
+    previewUrl.value = res.data.data.val_images;
+    if (previewUrl.value.length > 0) {
+      ElNotification.success({
+        title: "已存在验证结果",
+        message: "",
+        showClose: false,
+        duration: 1000
+      });
+      showValRequired.value = false;
+    } else {
+      showValRequired.value = true;
+    }
+  } catch (error) {
+    console.error("预览失败:", error);
+    ElMessage.error("预览失败: " + error.message);
+  }
+};
+
+const valWeights = async file => {
+  // 弹出表单
+  visible.value = true;
+  fileRow.value = file;
+};
+
+const confirmDialog = async filedValues => {
+  visible.value = false;
+  showLoading.value = true;
+  showValRequired.value = false;
+  try {
+    ElNotification.warning({
+      title: "正在验证...",
+      showClose: false,
+      duration: 1000
+    });
+    const res = await axios.get(
+      `${API_URL}/val_weight/${fileRow.value.file_id}`,
+      {
+        params: filedValues
+      }
+    );
+    console.log("res", res);
+    valTableData.value = [res.data.data.metrics]; // 直接更新响应式变量
+    previewUrl.value = res.data.data.val_images;
+    ElNotification.success({
+      title: "验证成功",
+      showClose: false,
+      duration: 1000
+    });
+  } catch (error) {
+    console.error("验证失败:", error.message);
+    ElMessage.error("验证失败: " + error.message);
+  } finally {
+    getTableData();
+    showLoading.value = false;
+  }
+};
+
 const cancelDialog = () => {
   visible.value = false;
 };
@@ -264,7 +343,7 @@ const getDetectionStatus = row => {
   }
 
   // 如果是普通文件
-  return String(row.model_metrics) === "null" ? "📷待验证" : "✔已验证";
+  return String(row.is_validated) === "null" ? "📷待验证" : "✔已验证";
 };
 
 const shouldShowDownloadButton = row => {
@@ -297,88 +376,9 @@ const changePage = op => {
 };
 
 //挂载完成
-onMounted(async () => {
-  try {
-    loading.value = true;
-    const response = await getStorage({
-      page: 1,
-      page_size: 100
-    });
-    storageData.value = response.data.data.files;
-    // 权重
-    weightsData.value = storageData.value.filter(file =>
-      String(file.kind).includes("weight")
-    );
-
-    validationsDatasets.value = storageData.value
-      .filter(file => String(file.kind).includes("dataset"))
-      .map(item => ({
-        key: item.id,
-        value: item.id,
-        label: item.original_filename
-      }));
-
-    console.log("validationsDatasets", validationsDatasets.value);
-    if (validationsDatasets.value.length > 0) {
-      dataset_id.value = validationsDatasets.value[0].value;
-    }
-
-    // total.value = storageData.value.length
-  } catch (error) {
-    console.error("获取数据失败:", error);
-  } finally {
-    loading.value = false;
-  }
+onMounted(() => {
+  getTableData();
 });
-
-// 验证条件
-const validationsConditions = async file => {
-  // 弹出表单
-  visible.value = true;
-  fileRow.value = file;
-  selectList.value = [file.id];
-};
-
-// 模型验证
-const handleValidateWeights = async () => {
-  try {
-    let fileIds;
-    if (Array.isArray(selectList.value)) {
-      fileIds = selectList.value;
-    } else {
-      fileIds = [selectList.value];
-    }
-    visible.value = false;
-    const validationRes = await validateWeights(
-      dataset_id.value,
-      validationConf.value,
-      fileIds
-    );
-    console.log("validationRes", validationRes);
-    // TODO 刷新表
-    ElMessage.success("验证完成");
-  } catch (error) {
-    console.error("验证失败", error);
-    ElMessage.error("验证失败");
-  } finally {
-    selectList.value = [];
-  }
-};
-
-// 文件预览
-const previewFile = async file => {
-  validationsResultsData.value = [];
-  console.log("file-id", file.id);
-  currentFile.value = file.id;
-  const validationsRes = await showValidations(file.id);
-  validationsResultsData.value = validationsRes.data.data;
-  console.log("validationsRes", validationsResultsData.value);
-  validationsResultsData.value[0].val_images.forEach(element => {
-    previewUrl.value.push(`${API_URL}/show-files/${file.id}?file_type=${FilesType.VALIDATED_IMAGE}&file_name=${element.name}&t=${Date.now()}`)
-  });
-  console.log("previewUrl", previewUrl.value);
-
-};
 </script>
 
 <template>
@@ -393,46 +393,50 @@ const previewFile = async file => {
           >
         </div>
 
-        <el-dialog v-model="visible" title="确认验证项" width="500px">
-          <div class="full-width-item">
-            数据集
-            <el-select
-              v-model="dataset_id"
-              placeholder="Select"
-              style="width: 100%"
-            >
-              <el-option
-                v-for="item in validationsDatasets"
-                :key="item.value"
-                :label="item.label"
-                :value="item.value"
-              />
-            </el-select>
+        <!-- 弹出表单 -->
+        <PlusDialogForm
+          v-model:visible="visible"
+          v-model="formValues"
+          title="确认验证项"
+          :form="{ columns }"
+          @confirm="confirmDialog"
+          @cancel="cancelDialog"
+        />
+
+        <div class="flex items-center space-x-5">
+          <!-- 分页控件 -->
+          <div class="pagination-container">
+            <el-pagination
+              :current-page="pageNum"
+              :page-size="pageSize"
+              :page-sizes="[16, 32, 64]"
+              :total="total"
+              layout="total, sizes, prev, pager, next"
+              @size-change="handleSizeChange"
+              @current-change="handleCurrentChange"
+            />
           </div>
 
-          <div class="full-width-item" style="margin-top: 16px">
-            置信度
-            <el-radio-group
-              v-model="validationConf"
-              text-color="#626aef"
-              fill="rgb(239, 240, 253)"
-              style="width: 100%"
+          <!-- 搜索区域 -->
+          <div class="search-container flex">
+            <el-input
+              v-model="fileName"
+              :prefix-icon="Search"
+              class="search-input"
+              clearable
+              placeholder="输入文件名称"
+              style="width: 150px"
+            />
+            <el-button
+              style="width: 65px"
+              :icon="Search"
+              class="search-button"
+              type="primary"
+              @click="getTableData"
+              >搜索</el-button
             >
-              <el-radio-button label="0.25" value="0.25" />
-              <el-radio-button label="0.5" value="0.5" />
-              <el-radio-button label="0.75" value="0.75" />
-            </el-radio-group>
           </div>
-
-          <template #footer>
-            <div class="dialog-footer">
-              <el-button @click="visible = false">取消</el-button>
-              <el-button type="primary" @click="handleValidateWeights">
-                确认
-              </el-button>
-            </div>
-          </template>
-        </el-dialog>
+        </div>
       </div>
     </template>
 
@@ -442,14 +446,14 @@ const previewFile = async file => {
         <template #paneL>
           <splitpane :splitSet="settingTB">
             <template #paneL>
-              <!-- <div v-if="showLoading" class="loader">
+              <div v-if="showLoading" class="loader">
                 正在验证中
                 <span />
               </div>
               <div v-if="showValRequired" class="loader">
                 请点击待验证
                 <span />
-              </div> -->
+              </div>
               <!-- 大图预览模式 -->
               <div
                 v-if="!showType && previewUrl.length > 0"
@@ -510,66 +514,106 @@ const previewFile = async file => {
                     class="flex flex-col relative justify-center align-center"
                   >
                     <div>
-                      <!-- 滚动条样式冲突 -->
                       <el-table
-                        :data="validationsResultsData"
+                        :data="valTableData"
                         border
                         stripe
                         style="font-size: x-small"
                         @sort-change="handleSortChange"
-                        highlight-current-row
-                        height="350"
                       >
                         <el-table-column
                           align="center"
                           label="置信度"
                           prop="conf"
+                          sortable
                         />
                         <el-table-column
                           align="center"
                           label="mAP50"
                           prop="mAP50"
-                        />
-                        <el-table-column
-                          align="center"
-                          label="mAP75"
-                          prop="mAP75"
-                        />
-                        <el-table-column
-                          align="center"
-                          label="mAP50-95"
-                          prop="mAP50-95"
+                          sortable
                         />
                         <el-table-column
                           align="center"
                           label="precision"
                           prop="precision"
+                          sortable
                         />
                         <el-table-column
                           align="center"
                           label="recall"
                           prop="recall"
-                        />
-
-                        <el-table-column
-                          align="center"
-                          label="各类ap50"
-                        >
-                          <template #default="scope">
-                            <div
-                              v-for="(item, index) in scope.row.class_ap50"
-                              :key="index"
-                            >
-                              {{ item.class }}: {{ item.ap50 }}
-                            </div>
-                          </template>
-                        </el-table-column>
-                        <el-table-column
-                          align="center"
-                          label="验证日期"
-                          prop="timestamp"
                           sortable
                         />
+                        <el-table-column
+                          align="center"
+                          label="mAP75"
+                          prop="mAP75"
+                          sortable
+                        />
+                        <el-table-column
+                          align="center"
+                          label="mAP50-95"
+                          prop="mAP50-95"
+                          sortable
+                        />
+
+                           <el-table-column
+                          align="center"
+                          label="crack"
+                          prop="crack"
+                          sortable
+                        />
+                        <el-table-column
+                          align="center"
+                          label="corrosion"
+                          prop="corrosion"
+                          sortable
+                        />
+                        <el-table-column
+                          align="center"
+                          label="obstacle"
+                          prop="obstacle"
+                          sortable
+                        />
+
+
+                        <!-- <el-table-column
+                          align="center"
+                          label="black"
+                          prop="black"
+                          sortable
+                        />
+                        <el-table-column
+                          align="center"
+                          label="damage"
+                          prop="damage"
+                          sortable
+                        />
+                        <el-table-column
+                          align="center"
+                          label="ink"
+                          prop="ink"
+                          sortable
+                        />
+                        <el-table-column
+                          align="center"
+                          label="residue"
+                          prop="residue"
+                          sortable
+                        />
+                        <el-table-column
+                          align="center"
+                          label="pi"
+                          prop="pi"
+                          sortable
+                        />
+                        <el-table-column
+                          align="center"
+                          label="circle"
+                          prop="circle"
+                          sortable
+                        /> -->
                       </el-table>
                     </div>
                   </div>
@@ -581,10 +625,11 @@ const previewFile = async file => {
 
         <!-- #paneR 展示面板 -->
         <template #paneR>
-          <div class="dv-a h-full">
-            <div class="flex flex-col relative justify-center h-full">
-              <el-scrollbar>
-                <div class="flex-[9]">
+          <el-scrollbar>
+            <div class="dv-a">
+              <!--              原始图像-->
+              <div class="flex flex-col relative justify-center align-center">
+                <div>
                   <el-table
                     :data="weightsData"
                     row-key="file_id"
@@ -593,27 +638,29 @@ const previewFile = async file => {
                     default-expand-all
                     @sort-change="handleSortChange"
                     @row-click="previewFile"
-                    highlight-current-row
                   >
                     <el-table-column
                       align="center"
                       label="文件名称"
-                      prop="original_filename"
+                      prop="file_name"
+                      sortable
                     />
                     <el-table-column
                       align="center"
                       label="上传时间"
-                      prop="created_at"
+                      prop="create_time"
+                      sortable
                     />
                     <el-table-column
                       align="center"
                       label="验证状态"
                       prop="is_detected"
+                      sortable
                     >
                       <template v-slot="scope">
                         <el-button
                           type="default"
-                          @click.stop="validationsConditions(scope.row)"
+                          @click.stop="valWeights(scope.row)"
                         >
                           <span>{{ getDetectionStatus(scope.row) }}</span>
                         </el-button>
@@ -633,45 +680,9 @@ const previewFile = async file => {
                     </el-table-column>
                   </el-table>
                 </div>
-              </el-scrollbar>
-              <div class="flex-[1]">
-                <div class="flex justify-center">
-                  <!-- 分页控件 -->
-                  <div class="pagination-container">
-                    <el-pagination
-                      :current-page="pageNum"
-                      :page-size="pageSize"
-                      :page-sizes="[16, 32, 64]"
-                      :total="total"
-                      layout="total, sizes, prev, pager, next"
-                      @size-change="handleSizeChange"
-                      @current-change="handleCurrentChange"
-                    />
-                  </div>
-
-                  <!-- 搜索区域 -->
-                  <div class="search-container flex">
-                    <el-input
-                      v-model="fileName"
-                      :prefix-icon="Search"
-                      class="search-input"
-                      clearable
-                      placeholder="输入文件名称"
-                      style="width: 150px"
-                    />
-                    <el-button
-                      style="width: 65px"
-                      :icon="Search"
-                      class="search-button"
-                      type="primary"
-                      @click="getTableData"
-                      >搜索</el-button
-                    >
-                  </div>
-                </div>
               </div>
             </div>
-          </div>
+          </el-scrollbar>
         </template>
       </splitpane>
     </div>
@@ -687,7 +698,18 @@ const previewFile = async file => {
   border: 1px solid #e5e6eb;
 
   .dv-a {
+    //padding-top: 30vh;
     color: rgba($color: dodgerblue, $alpha: 80%);
+  }
+
+  .dv-b {
+    padding-top: 10vh;
+    color: rgba($color: #000, $alpha: 80%);
+  }
+
+  .dv-c {
+    padding-top: 18vh;
+    color: rgba($color: #ce272d, $alpha: 80%);
   }
 }
 
@@ -827,9 +849,5 @@ code {
   100% {
     transform: rotate(405deg);
   }
-}
-.full-width-item {
-  width: 100%;
-  box-sizing: border-box; /* 避免 padding/margin 撑出容器 */
 }
 </style>

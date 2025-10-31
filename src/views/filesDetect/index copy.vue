@@ -16,13 +16,6 @@ import {
   ArrowLeft,
   ArrowRight
 } from "@element-plus/icons-vue";
-import {
-  getStorage,
-  deleteFiles,
-  FilesType,
-  predictFiles,
-  showPredictions
-} from "@/api/ultralytics.ts";
 
 defineOptions({
   name: "FilesDetect"
@@ -30,19 +23,15 @@ defineOptions({
 
 const settingLR: ContextProps = reactive({
   minPercent: 20,
-  defaultPercent: 50,
+  defaultPercent: 80,
   split: "vertical"
 });
 
 const settingTB: ContextProps = reactive({
   minPercent: 20,
-  defaultPercent: 70,
+  defaultPercent: 50,
   split: "horizontal"
 });
-
-const storageData = ref([]);
-const loading = ref(false);
-const selectList = ref([]);
 
 const tableData = ref([]);
 const pageSize = ref(16);
@@ -51,9 +40,7 @@ const filteredData = ref([]);
 const total = ref(0);
 const allData = ref([]);
 
-const imageVideo = ref(0); // 0 图片 1 视频
 const imagesData = ref([]);
-const videoData = ref([]);
 const weightsData = ref([]);
 
 const sortProp = ref("");
@@ -66,7 +53,6 @@ const conf = ref(0.25);
 const detectTableData = ref([]);
 const modelOptions = ref([]);
 const modelValue = ref(""); // 先给空值
-const predictionData = ref([]);
 
 // 获取表单数据
 const getTableData = () => {
@@ -84,10 +70,11 @@ const getTableData = () => {
           allData.value = data.data;
           console.log("allData", allData.value);
 
+
           imagesData.value = allData.value.filter(
             item =>
               // item.file_comment == "upload_images" ||
-              // item.file_comment == "image-folder"
+            // item.file_comment == "image-folder"
               item.comment == "upload_images" ||
               String(item.file_id).includes("images-folder")
           );
@@ -95,6 +82,7 @@ const getTableData = () => {
           weightsData.value = allData.value.filter(
             // item => item.file_comment == "upload_weights"
             item => String(item.file_name).includes(".pt")
+
           );
           console.log("weightsData", weightsData.value);
           modelOptions.value = weightsData.value.map(item => ({
@@ -184,6 +172,34 @@ const handleSortChange = column => {
   filterAndSortData();
 };
 
+const previewFile = async file => {
+  currentFile.value = file;
+  if (String(file.file_id).includes("folder")) {
+    return;
+  }
+  // 读取图像的函数
+  try {
+    const res = await axios.get(`${API_URL}/show_image/${file.file_id}`);
+    previewUrl.value = res.data.data.image_url; // 直接更新响应式变量
+    detectUrl.value = res.data.data.detect_url; // 直接更新响应式变量
+    detectTableData.value = res.data.data.detect_result; // 直接更新响应式变量
+    // ElNotification.success({
+    //   title: "已存在检测结果",
+    //   message: "",
+    //   showClose: false,
+    //   duration: 1000
+    // });
+  } catch (error) {
+    console.error("预览失败:", error);
+    ElNotification.error({
+      title: "检测失败",
+      message: "",
+      showClose: false,
+      duration: 1000
+    });
+  }
+};
+
 const detectFiles = async file => {
   ElNotification.warning({
     title: "正在检测...",
@@ -244,6 +260,7 @@ const downloadFiles = async file => {
         params: {
           detect_id: file.is_detected,
           is_detected: true
+
         }
       })
       .then(({ data }) => {
@@ -296,7 +313,7 @@ const getDetectionStatus = row => {
   }
 
   // 如果是普通文件
-  return String(row.media_annotations) === "null" ? "📷待检测" : "✔已检测";
+  return String(row.is_detected) === "null" ? "📷待检测" : "✔已检测";
 };
 
 const shouldShowDownloadButton = row => {
@@ -311,150 +328,70 @@ const shouldShowDownloadButton = row => {
   // 单文件：自己检测完成就显示
   return row.is_detected !== "False";
 };
-
 //挂载完成
-onMounted(async () => {
-  try {
-    loading.value = true;
-    const response = await getStorage({
-      page: 1,
-      page_size: 100
-    });
-    storageData.value = response.data.data.files;
-
-    // 图片
-    imagesData.value = storageData.value.filter(file =>
-      String(file.content_type).includes("image")
-    );
-
-    // 开屏渲染
-    currentFile.value = imagesData.value[0].id;
-    previewUrl.value = `${API_URL}/show-files/${currentFile.value}?file_type=${FilesType.PREDICTED_IMAGE}&t=${Date.now()}`;
-
-    // 视频
-    videoData.value = storageData.value.filter(file =>
-      String(file.kind).includes("video")
-    );
-
-    // 权重
-    weightsData.value = storageData.value.filter(file =>
-      String(file.kind).includes("weight")
-    );
-
-    modelOptions.value = weightsData.value.map(item => ({
-      value: item.id,
-      label: item.original_filename
-    }));
-
-    if (modelOptions.value.length > 0) {
-      modelValue.value = modelOptions.value[0].value;
-    }
-
-    // total.value = storageData.value.length
-  } catch (error) {
-    console.error("获取数据失败:", error);
-  } finally {
-    loading.value = false;
-  }
+onMounted(() => {
+  getTableData();
 });
-
-// 文件预览
-const previewFile = async file => {
-  console.log("file-id", file.id);
-  currentFile.value = file.id;
-  previewUrl.value = `${API_URL}/show-files/${file.id}?file_type=${FilesType.PREDICTED_IMAGE}&t=${Date.now()}`;
-  console.log("previewUrl", previewUrl.value);
-
-  const predictionsRes = await showPredictions(file.id);
-  console.log(
-    "predictionsRes",
-    predictionsRes.data.data.records[0].media_annotations[0].prediction
-  );
-  predictionData.value =
-    predictionsRes.data.data.records[0].media_annotations[0].prediction;
-};
-
-const handlePreviewError = () => {
-  ElNotification.error({
-    title: "无检测记录",
-    message: "",
-    showClose: true,
-    duration: 2000
-  });
-  previewUrl.value = `${API_URL}/show-files/${currentFile.value}?file_type=${FilesType.IMAGE}`;
-};
-
-// 文件预测
-const handlePrediction = async file => {
-  try {
-    let fileIds;
-    if (Array.isArray(file)) {
-      fileIds = file;
-    } else if (file.id !== undefined) {
-      fileIds = [file.id];
-    } else {
-      fileIds = [file];
-    }
-    const predictionRes = await predictFiles(modelValue.value, fileIds);
-    predictionData.value = predictionRes.data[0].data.prediction;
-
-    // TODO 刷新表
-    ElMessage.success("检测完成");
-  } catch (error) {
-    console.error("检测失败", error);
-    ElMessage.error("检测失败");
-  } finally {
-    selectList.value = [];
-  }
-};
 </script>
 
 <template>
   <el-card shadow="never">
+    <!-- 表头提示 -->
     <template #header>
-      <div class="card-header flex justify-between space-x-10">
-        <div class="flex items-center space-x-2">
-          <div>模型</div>
-          <div>
-            <el-select
-              v-model="modelValue"
-              filterable
-              clearable
-              placeholder="Select"
-              style="width: 120px"
-            >
-              <el-option
-                v-for="item in modelOptions"
-                style="color: hotpink"
-                :key="item.value"
-                :label="item.label"
-                :value="item.value"
-              />
-            </el-select>
-          </div>
+      <div class="card-header flex items-center space-x-10">
+        <div>
+          <el-select
+            v-model="modelValue"
+            filterable
+            clearable
+            placeholder="Select"
+            style="width: 120px"
+          >
+            <el-option
+              v-for="item in modelOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
         </div>
-        <div class="flex space-x-4">
-          <div class="flex items-center space-x-2">
-            <div>置信度</div>
-            <div>
-              <el-radio-group v-model="conf" :disabled="false">
-                <el-radio-button :value="0.25">0.25</el-radio-button>
-                <el-radio-button :value="0.5">0.50</el-radio-button>
-                <el-radio-button :value="0.75">0.75</el-radio-button>
-              </el-radio-group>
-            </div>
-          </div>
-          <div class="flex space-x-2">
-            <div class="flex items-center space-x-2">
-              <div>类型</div>
-              <div>
-                <el-radio-group v-model="imageVideo" :disabled="false">
-                  <el-radio-button :value="0">图像</el-radio-button>
-                  <el-radio-button :value="1">视频</el-radio-button>
-                </el-radio-group>
-              </div>
-            </div>
-          </div>
+        <div>
+          <el-radio-group v-model="conf" :disabled="false">
+            <el-radio-button :value="0.25">0.25</el-radio-button>
+            <el-radio-button :value="0.5">0.5</el-radio-button>
+            <el-radio-button :value="0.75">0.75</el-radio-button>
+          </el-radio-group>
+        </div>
+
+        <!-- 分页控件 -->
+        <div class="pagination-container">
+          <el-pagination
+            :current-page="pageNum"
+            :page-size="pageSize"
+            :page-sizes="[16, 32, 64]"
+            :total="total"
+            layout="total, sizes, prev, pager, next, jumper"
+            @size-change="handleSizeChange"
+            @current-change="handleCurrentChange"
+          />
+        </div>
+
+        <!-- 搜索区域 -->
+        <div class="search-container flex">
+          <el-input
+            v-model="fileName"
+            :prefix-icon="Search"
+            class="search-input"
+            clearable
+            placeholder="请输入文件名称"
+          />
+          <el-button
+            :icon="Search"
+            class="search-button"
+            type="primary"
+            @click="getTableData"
+            >搜索</el-button
+          >
         </div>
       </div>
     </template>
@@ -463,126 +400,65 @@ const handlePrediction = async file => {
       <splitpane :splitSet="settingLR">
         <!-- #paneL 左侧表格 -->
         <template #paneL>
-          <div class="dv-a h-full">
-            <!-- 文件数据表格 -->
-            <div class="flex flex-col relative justify-center h-full">
-              <el-scrollbar>
-                <div class="flex-[9]">
-                  <el-table
-                    :data="imageVideo === 0 ? imagesData : videoData"
-                    row-key="id"
-                    border
-                    stripe
-                    default-expand-all
-                    @sort-change="handleSortChange"
-                    @row-click="previewFile"
-                    highlight-current-row
-                  >
-                    <el-table-column type="selection" width="35" />
-                    <el-table-column align="center" label="id" prop="id" />
-                    <el-table-column
-                      align="center"
-                      label="文件名称"
-                      prop="original_filename"
-                    />
-                    <el-table-column
-                      align="center"
-                      label="上传时间"
-                      prop="created_at"
-                    />
-                    <el-table-column
-                      align="center"
-                      label="检测状态"
-                      prop="is_detected"
-                    >
-                      <template v-slot="scope">
-                        <el-button
-                          type="default"
-                          @click.stop="handlePrediction(scope.row)"
-                        >
-                          <span>{{ getDetectionStatus(scope.row) }}</span>
-                        </el-button>
-                      </template>
-                    </el-table-column>
-                    <el-table-column align="center" label="下载结果">
-                      <template v-slot="scope">
-                        <el-button
-                          v-if="shouldShowDownloadButton(scope.row)"
-                          :icon="Download"
-                          type="default"
-                          @click.stop="downloadFiles(scope.row)"
-                        >
-                          下载
-                        </el-button>
-                      </template>
-                    </el-table-column>
-                  </el-table>
-                </div>
-              </el-scrollbar>
-              <div class="flex-[1]">
-                <div class="flex justify-center">
-                  <!-- 分页控件 -->
-                  <div class="pagination-container">
-                    <el-pagination
-                      :current-page="pageNum"
-                      :page-size="pageSize"
-                      :page-sizes="[16, 32, 64]"
-                      :total="total"
-                      layout="total, sizes, prev, pager, next, jumper"
-                      @size-change="handleSizeChange"
-                      @current-change="handleCurrentChange"
-                    />
-                  </div>
-
-                  <!-- 搜索区域 -->
-                  <div class="search-container flex">
-                    <el-input
-                      v-model="fileName"
-                      :prefix-icon="Search"
-                      class="search-input"
-                      clearable
-                      placeholder="请输入文件名称"
-                    />
-                    <el-button
-                      :icon="Search"
-                      class="search-button"
-                      type="primary"
-                      @click="getTableData"
-                      >搜索</el-button
-                    >
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </template>
-
-        <!-- #paneR 展示面板 -->
-        <template #paneR>
           <splitpane :splitSet="settingTB">
             <template #paneL>
               <el-scrollbar>
                 <div class="dv-a">
-                  <!--              检测图像-->
-                  <div v-if="previewUrl">
-                    <el-image
-                      style="width: 100%; height: 100%; object-fit: contain"
-                      :src="previewUrl"
-                      :zoom-rate="1.2"
-                      :max-scale="7"
-                      :min-scale="0.2"
-                      :preview-src-list="[previewUrl]"
-                      show-progress
-                      :initial-index="0"
-                      fit="contain"
-                      @error="handlePreviewError"
-                    >
-                      <template #error>
-                        <div class="custom-error">
-                          <span>无检测信息</span>
-                        </div>
-                      </template>
-                    </el-image>
+                  <!-- 文件数据表格 -->
+                  <div
+                    class="flex flex-col relative justify-center align-center"
+                  >
+                    <div>
+                      <el-table
+                        :data="tableData"
+                        row-key="file_id"
+                        border
+                        stripe
+                        default-expand-all
+                        @sort-change="handleSortChange"
+                        @row-click="previewFile"
+                      >
+                        <el-table-column
+                          align="center"
+                          label="文件名称"
+                          prop="file_name"
+                          sortable
+                        />
+                        <el-table-column
+                          align="center"
+                          label="上传时间"
+                          prop="create_time"
+                          sortable
+                        />
+                        <el-table-column
+                          align="center"
+                          label="检测状态"
+                          prop="is_detected"
+                          sortable
+                        >
+                          <template v-slot="scope">
+                            <el-button
+                              type="default"
+                              @click.stop="detectFiles(scope.row)"
+                            >
+                              <span>{{ getDetectionStatus(scope.row) }}</span>
+                            </el-button>
+                          </template>
+                        </el-table-column>
+                        <el-table-column align="center" label="下载结果">
+                          <template v-slot="scope">
+                            <el-button
+                              v-if="shouldShowDownloadButton(scope.row)"
+                              :icon="Download"
+                              type="default"
+                              @click.stop="downloadFiles(scope.row)"
+                            >
+                              下载
+                            </el-button>
+                          </template>
+                        </el-table-column>
+                      </el-table>
+                    </div>
                   </div>
                 </div>
               </el-scrollbar>
@@ -597,51 +473,105 @@ const handlePrediction = async file => {
                   >
                     <div>
                       <el-table
-                        :data="predictionData"
+                        :data="detectTableData"
                         border
                         stripe
                         @sort-change="handleSortChange"
                       >
                         <el-table-column
                           align="center"
+                          label="文件名称"
+                          prop="file_name"
+                          sortable
+                        />
+                        <el-table-column
+                          align="center"
                           label="类别"
                           width="100"
-                          prop="class"
+                          prop="cls"
+                          sortable
                         />
                         <el-table-column
                           align="center"
                           label="置信度"
                           width="100"
                           prop="conf"
+                          sortable
                         />
                         <el-table-column
                           align="center"
                           label="YOLO坐标"
                           prop="yolo_coord"
+                          sortable
                         />
                         <el-table-column
                           align="center"
                           label="像素坐标"
-                          prop="image_coord"
+                          prop="detect_coord"
+                          sortable
                         />
                         <el-table-column
                           align="center"
                           label="目标面积"
                           width="150"
-                          prop="predicted_area"
+                          prop="detect_area"
+                          sortable
                         />
                         <el-table-column
                           align="center"
                           label="图像尺寸"
                           prop="image_size"
-                        />
-                        <el-table-column
-                          align="center"
-                          label="检测时间"
-                          prop="timestamp"
+                          sortable
                         />
                       </el-table>
                     </div>
+                  </div>
+                </div>
+              </el-scrollbar>
+            </template>
+          </splitpane>
+        </template>
+
+        <!-- #paneR 展示面板 -->
+        <template #paneR>
+          <splitpane :splitSet="settingTB">
+            <template #paneL>
+              <el-scrollbar>
+                <div class="dv-a">
+                  <!--              原始图像-->
+                  <div v-if="previewUrl">
+                    <el-image
+                      style="width: 100%; height: 100%; object-fit: contain"
+                      :src="previewUrl"
+                      :zoom-rate="1.2"
+                      :max-scale="7"
+                      :min-scale="0.2"
+                      :preview-src-list="[previewUrl]"
+                      show-progress
+                      :initial-index="0"
+                      fit="contain"
+                    />
+                  </div>
+                </div>
+              </el-scrollbar>
+            </template>
+
+            <template #paneR>
+              <el-scrollbar>
+                <div class="dv-a">
+                  <!--              检测图像-->
+                  <div v-if="previewUrl">
+                    <el-image
+                      style="width: 100%; height: 100%; object-fit: contain"
+                      :src="detectUrl"
+                      :zoom-rate="1.2"
+                      :max-scale="7"
+                      :min-scale="0.2"
+                      :preview-src-list="[detectUrl]"
+                      show-progress
+                      :initial-index="0"
+                      fit="contain"
+                    />
                   </div>
                 </div>
               </el-scrollbar>
@@ -662,7 +592,18 @@ const handlePrediction = async file => {
   border: 1px solid #e5e6eb;
 
   .dv-a {
+    //padding-top: 30vh;
     color: rgba($color: dodgerblue, $alpha: 80%);
+  }
+
+  .dv-b {
+    padding-top: 10vh;
+    color: rgba($color: #000, $alpha: 80%);
+  }
+
+  .dv-c {
+    padding-top: 18vh;
+    color: rgba($color: #ce272d, $alpha: 80%);
   }
 }
 
@@ -723,24 +664,5 @@ code {
 
 .yaml-content::-webkit-scrollbar-thumb:hover {
   background: #718096;
-}
-
-.custom-error {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #909399;
-  background: #f5f7fa;
-}
-
-.el-table__row--current {
-  background-color: #e6f7ff !important; /* 浅蓝色背景 */
-}
-
-.el-table__row--current > td {
-  color: #1890ff !important; /* 蓝色文字 */
-  font-weight: bold; /* 加粗文字 */
 }
 </style>

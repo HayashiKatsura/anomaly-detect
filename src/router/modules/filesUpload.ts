@@ -5,7 +5,7 @@ export default {
   path: "/filesUpload",
   redirect: "/filesUpload/index",
   meta: {
-    title: "📃 文件上传",
+    title: "📃 文件管理",
     rank: filesUpload
   },
   children: [
@@ -14,7 +14,7 @@ export default {
       name: "FilesUpload",
       component: () => import("@/views/filesUpload/index.vue"),
       meta: {
-        title: "📃 文件上传"
+        title: "📃 文件管理"
         // showParent: true
       }
     }

@@ -27,13 +27,6 @@ import {
   Picture
 } from "@element-plus/icons-vue";
 import { downloadByData } from "@pureadmin/utils";
-import {
-  getStorage,
-  deleteFiles,
-  FilesType,
-  predictFiles,
-  showPredictions
-} from "@/api/ultralytics.ts";
 
 defineOptions({
   name: "CameraDetect"
@@ -50,10 +43,6 @@ const settingTB: ContextProps = reactive({
   defaultPercent: 80,
   split: "horizontal"
 });
-
-const storageData = ref([]);
-const loading = ref(false);
-const selectList = ref([]);
 
 // 响应式数据
 const videoRef = ref(null);
@@ -458,40 +447,8 @@ const previewFile = async file => {
 };
 
 //挂载完成
-onMounted(async () => {
-  try {
-    loading.value = true;
-    const response = await getStorage({
-      page: 1,
-      page_size: 100
-    });
-    storageData.value = response.data.data.files;
-
-    // 图片
-    // imagesData.value = storageData.value.filter(file =>
-    //   String(file.content_type).includes("image")
-    // );
-
-    // 权重
-    weightsData.value = storageData.value.filter(file =>
-      String(file.kind).includes("weight")
-    );
-
-    modelOptions.value = weightsData.value.map(item => ({
-      value: item.id,
-      label: item.original_filename
-    }));
-
-    if (modelOptions.value.length > 0) {
-      modelValue.value = modelOptions.value[0].value;
-    }
-
-    // total.value = storageData.value.length
-  } catch (error) {
-    console.error("获取数据失败:", error);
-  } finally {
-    loading.value = false;
-  }
+onMounted(() => {
+  getTableData();
 });
 
 // 组件卸载时清理资源
@@ -933,39 +890,46 @@ const getDetectionStatus = row => {
                         align="center"
                         label="文件名称"
                         prop="file_name"
+                        sortable
                       />
                       <el-table-column
                         align="center"
                         label="类别"
                         width="100"
                         prop="cls"
+                        sortable
                       />
                       <el-table-column
                         align="center"
                         label="置信度"
                         width="100"
                         prop="conf"
+                        sortable
                       />
                       <el-table-column
                         align="center"
                         label="YOLO坐标"
                         prop="yolo_coord"
+                        sortable
                       />
                       <el-table-column
                         align="center"
                         label="像素坐标"
                         prop="detect_coord"
+                        sortable
                       />
                       <el-table-column
                         align="center"
                         label="目标面积"
                         width="150"
                         prop="detect_area"
+                        sortable
                       />
                       <el-table-column
                         align="center"
                         label="图像尺寸"
                         prop="image_size"
+                        sortable
                       />
                     </el-table>
                   </div>
@@ -999,16 +963,19 @@ const getDetectionStatus = row => {
                       fixed
                       prop="create_time"
                       label="日期"
+                      sortable
                     />
                     <el-table-column
                       align="center"
                       prop="file_name"
                       label="名称"
+                      sortable
                     />
                     <el-table-column
                       align="center"
                       label="状态"
                       prop="is_detected"
+                      sortable
                     >
                       <template v-slot="scope">
                         <span>{{ getDetectionStatus(scope.row) }}</span>

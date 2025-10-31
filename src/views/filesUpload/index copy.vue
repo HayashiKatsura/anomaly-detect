@@ -6,7 +6,6 @@ import { ElMessage, ElNotification } from "element-plus";
 import axios from "axios";
 import { API_URL } from "@/url.js";
 import Prism from "prismjs";
-import { getStorage, deleteFiles } from "@/api/ultralytics.ts";
 
 // 导入 YAML 语言支持和主题
 import "prismjs/components/prism-yaml";
@@ -26,13 +25,9 @@ defineOptions({
   name: "FilesUpload"
 });
 
-const storageData = ref([]);
-const loading = ref(false);
-const selectList = ref([]);
-
 const uploading = ref(false);
 const tableData = ref([]);
-const pageSize = ref(10);
+const pageSize = ref(16);
 const pageNum = ref(1);
 const filteredData = ref([]);
 const total = ref(0);
@@ -176,7 +171,7 @@ const handleFileChangeUnified = file => {
     image: [".png", ".jpg", ".jpeg"],
     archive: [".zip", ".rar", ".7z"],
     config: [".yaml", ".yml"],
-    video: [".mp4", ".mkv", ".avi", ".mov"]
+    video:[".mp4",".mkv",".avi",".mov"]
   };
   const fileName = file.raw.name.toLowerCase();
   // 判断当前文件所属分组
@@ -280,76 +275,84 @@ const submitFilesUpload = () => {
     });
 };
 
-
-
-// 计算属性：语法高亮后的内容
-const highlightedContent = computed(() => {
-  if (!textContent.value) return "";
-
-  try {
-    return Prism.highlight(textContent.value, Prism.languages.yaml, "yaml");
-  } catch (e) {
-    console.warn("语法高亮失败:", e);
-    return textContent.value;
-  }
-});
-
-//挂载完成
-onMounted(async () => {
-  try {
-    loading.value = true;
-    const response = await getStorage({
-      page: 1,
-      page_size: 100
-    });
-    storageData.value = response.data.data.files;
-    total.value = storageData.value.length
-    // console.log('storageData', storageData.value);
-  } catch (error) {
-    console.error("获取数据失败:", error);
-  } finally {
-    loading.value = false;
-  }
-});
-
-// 文件选择
-const handleSelectionChange = line => {
-  line.forEach(item => {
-    selectList.value.push(item.id);
-  });
-};
-
-// 文件预览
 const previewFile = async file => {
-  console.log("file-id", file.id);
-  previewUrl.value = `${API_URL}/show-files/${file.id}`;
-  console.log("previewUrl", previewUrl.value);
-};
+  let file_name = file.file_name;
+  // 获取文件扩展名并转换为小写
+  fileExt.value = file_name.toLowerCase().split(".").pop();
+  console.log("fileExt", fileExt.value);
 
-// 文件删除
-const handleDelete = async file => {
-  try {
-    let fileIds;
-    if (Array.isArray(file)) {
-      fileIds = file;
-    } else if (file.id !== undefined) {
-      fileIds = [file.id];
-    } else {
-      fileIds = [file];
+  // 定义图像文件扩展名
+  const imageExtensions = ["png", "jpg", "jpeg"];
+
+  // 定义文本文件扩展名
+  const textExtensions = ["yaml", "yml", "txt"];
+
+  if (imageExtensions.includes(fileExt.value)) {
+    // 执行读取图像的函数
+    try {
+      textContent.value = "";
+      const res = await axios.get(`${API_URL}/show_image/${file.file_id}`);
+      previewUrl.value = res.data.data.image_url; // 直接更新响应式变量
+    } catch (error) {
+      console.error("预览失败:", error);
+      ElNotification.error({
+        title: "预览失败",
+        message: error.message,
+        showClose: false,
+        duration: 1000
+      });
     }
-    const response = await deleteFiles(fileIds);
-    storageData.value = storageData.value.filter(
-      file => !fileIds.includes(file.id)
-    );
-    ElMessage.success("删除成功");
-  } catch (error) {
-    console.error("删除失败", error);
-    ElMessage.error("删除失败");
-  } finally {
-    selectList.value = [];
+  } else if (textExtensions.includes(fileExt.value)) {
+    // 执行读取文本的函数
+    try {
+      previewUrl.value = "";
+      const res = await axios.get(`${API_URL}/show_text/${file.file_id}`);
+      console.log("txt", res.data.data);
+
+      textContent.value = res.data.data; // 直接更新响应式变量
+    } catch (error) {
+      console.error("预览失败:", error);
+      ElNotification.error({
+        title: "预览失败",
+        message: error.message,
+        showClose: false,
+        duration: 1000
+      });
+    }
+  } else {
+    // 可选：处理不支持的文件类型
+    // ElNotification.info({
+    //   title: "不支持预览的类型",
+    //   message: fileExt.value,
+    //   showClose: false,
+    //   duration: 1000
+    // });
+    return;
   }
 };
-
+const deleteFile = async file => {
+  try {
+    const res = await axios.delete(`${API_URL}/delete_file/${file.file_id}`);
+    previewUrl.value = "";
+    textContent.value = "";
+    ElNotification.success({
+      title: "删除成功",
+      message: "删除成功: " + file.file_name,
+      showClose: false,
+      duration: 1000
+    });
+  } catch (error) {
+    console.error("删除失败:", file.file_name);
+    ElNotification.error({
+      title: "删除失败",
+      message: "删除失败: " + error.message,
+      showClose: false,
+      duration: 1000
+    });
+  } finally {
+    getTableData();
+  }
+};
 
 // 文件下载
 const downloadFiles = async file => {
@@ -361,7 +364,7 @@ const downloadFiles = async file => {
   let file_name = file.file_name;
   try {
     await axios
-      .get(`${API_URL}/download-files/${file.file_id}`, {
+      .get(`${API_URL}/download_file/${file.file_id}`, {
         responseType: "blob"
       })
       .then(({ data }) => {
@@ -385,6 +388,22 @@ const downloadFiles = async file => {
   }
 };
 
+// 计算属性：语法高亮后的内容
+const highlightedContent = computed(() => {
+  if (!textContent.value) return "";
+
+  try {
+    return Prism.highlight(textContent.value, Prism.languages.yaml, "yaml");
+  } catch (e) {
+    console.warn("语法高亮失败:", e);
+    return textContent.value;
+  }
+});
+
+//挂载完成
+onMounted(() => {
+  getTableData();
+});
 </script>
 
 <template>
@@ -396,16 +415,37 @@ const downloadFiles = async file => {
           <el-button :icon="Upload" type="primary" @click="openRandomUpload">
             上传文件
           </el-button>
-          <el-button :icon="Download" type="primary" @click="openRandomUpload">
-            下载文件
-          </el-button>
+        </div>
+
+        <!-- 分页控件 -->
+        <div class="pagination-container">
+          <el-pagination
+            :current-page="pageNum"
+            :page-size="pageSize"
+            :page-sizes="[16, 32, 64]"
+            :total="total"
+            layout="total, sizes, prev, pager, next, jumper"
+            @size-change="handleSizeChange"
+            @current-change="handleCurrentChange"
+          />
+        </div>
+
+        <!-- 搜索区域 -->
+        <div class="search-container flex">
+          <el-input
+            v-model="fileName"
+            :prefix-icon="Search"
+            class="search-input"
+            clearable
+            placeholder="请输入文件名称"
+          />
           <el-button
-            :icon="Delete"
-            type="danger"
-            @click="handleDelete(selectList)"
+            :icon="Search"
+            class="search-button"
+            type="primary"
+            @click="getTableData"
+            >搜索</el-button
           >
-            删除文件
-          </el-button>
         </div>
 
         <el-dialog
@@ -457,53 +497,54 @@ const downloadFiles = async file => {
         <!-- #paneL 表格面板 -->
         <template #paneL>
           <!-- 自定义右侧面板的内容 -->
-          <div class="dv-a h-full">
-            <div
-              v-loading="loading"
-              class="flex flex-col relative justify-center h-full"
-            >
+          <el-scrollbar>
+            <div class="dv-a">
               <!-- 文件数据表格 -->
-              <el-scrollbar>
-                <div class="flex-[9]">
+              <div class="flex flex-col relative justify-center align-center">
+                <div>
                   <el-table
-                    :data="storageData"
-                    row-key="id"
+                    :data="tableData"
+                    row-key="file_id"
                     border
                     stripe
                     default-expand-all
                     @sort-change="handleSortChange"
                     @row-click="previewFile"
-                    highlight-current-row
-                    @selection-change="handleSelectionChange"
                   >
-                    <el-table-column type="selection" width="35" />
                     <el-table-column
                       align="center"
                       label="文件名称"
-                      prop="original_filename"
+                      prop="file_name"
                       sortable
                     />
                     <el-table-column
                       align="center"
                       label="文件类型"
-                      prop="kind"
+                      prop="type"
                       sortable
                     />
                     <el-table-column
                       align="center"
-                      label="文件大小"
-                      prop="size_bytes"
+                      label="文件描述"
+                      prop="comment"
                       sortable
                     />
                     <el-table-column
                       align="center"
                       label="上传时间"
-                      prop="created_at"
+                      prop="create_time"
                       sortable
                     />
 
                     <el-table-column align="center" label="操作">
                       <template v-slot="scope">
+                        <el-button
+                          v-if="scope.row.comment.includes('folder')"
+                          :icon="Upload"
+                          type="default"
+                          @click.stop="openFolderUpload(scope.row)"
+                        />
+
                         <el-button
                           v-if="true"
                           :icon="Download"
@@ -517,7 +558,7 @@ const downloadFiles = async file => {
                           :icon="Delete"
                           icon-color="#626AEF"
                           title="是否确认删除？"
-                          @confirm="handleDelete(scope.row)"
+                          @confirm="deleteFile(scope.row)"
                           @cancel="console.log('cancel!')"
                         >
                           <template #reference>
@@ -528,76 +569,37 @@ const downloadFiles = async file => {
                     </el-table-column>
                   </el-table>
                 </div>
-              </el-scrollbar>
-
-              <div class="flex-[1]">
-                <div class="flex justify-center">
-                  <!-- 分页控件 -->
-                  <div class="pagination-container">
-                    <el-pagination
-                      :current-page="pageNum"
-                      :page-size="pageSize"
-                      :page-sizes="[10, 20, 30]"
-                      :total="total"
-                      :pager-count="3"
-                      layout="total, sizes, prev, pager, next, jumper"
-                      @size-change="handleSizeChange"
-                      @current-change="handleCurrentChange"
-                    />
-                  </div>
-
-                  <!-- 搜索区域 -->
-                  <div class="search-container flex">
-                    <el-input
-                      v-model="fileName"
-                      :prefix-icon="Search"
-                      class="search-input"
-                      clearable
-                      placeholder="请输入文件名称"
-                    />
-                    <el-button
-                      :icon="Search"
-                      class="search-button"
-                      type="primary"
-                      @click="getTableData"
-                      >搜索</el-button
-                    >
-                  </div>
-                </div>
               </div>
             </div>
-          </div>
+          </el-scrollbar>
         </template>
 
         <!-- #paneR 显示面板 -->
         <template #paneR>
           <!-- 自定义右侧面板的内容 -->
-          <!-- <el-scrollbar>
-          </el-scrollbar> -->
-          <div class="dv-a flex justify-center items-center w-full h-full">
-            <!--              图像-->
-            <div
-              v-if="previewUrl"
-              class="justify-center items-center w-full h-full"
-            >
-              <el-image
-                style="width: 100%; height: 100%; object-fit: contain"
-                :src="previewUrl"
-                :zoom-rate="1.2"
-                :max-scale="7"
-                :min-scale="0.2"
-                :preview-src-list="[previewUrl]"
-                show-progress
-                :initial-index="0"
-                fit="contain"
-              />
-            </div>
-            <!--              txt-->
-            <div v-else-if="['yaml', 'yml', 'txt'].includes(fileExt)" />
-            <pre>
+          <el-scrollbar>
+            <div class="dv-a">
+              <!--              图像-->
+              <div v-if="['png', 'jpg', 'jpeg'].includes(fileExt)">
+                <el-image
+                  style="width: 100%; height: 100%; object-fit: contain"
+                  :src="previewUrl"
+                  :zoom-rate="1.2"
+                  :max-scale="7"
+                  :min-scale="0.2"
+                  :preview-src-list="[previewUrl]"
+                  show-progress
+                  :initial-index="0"
+                  fit="contain"
+                />
+              </div>
+              <!--              txt-->
+              <div v-else-if="['yaml', 'yml', 'txt'].includes(fileExt)" />
+              <pre>
                 <code class="text-left" v-html="highlightedContent"/>
               </pre>
-          </div>
+            </div>
+          </el-scrollbar>
         </template>
       </splitpane>
     </div>
@@ -613,7 +615,18 @@ const downloadFiles = async file => {
   border: 1px solid #e5e6eb;
 
   .dv-a {
+    //padding-top: 30vh;
     color: rgba($color: dodgerblue, $alpha: 80%);
+  }
+
+  .dv-b {
+    padding-top: 10vh;
+    color: rgba($color: #000, $alpha: 80%);
+  }
+
+  .dv-c {
+    padding-top: 18vh;
+    color: rgba($color: #ce272d, $alpha: 80%);
   }
 }
 
