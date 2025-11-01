@@ -16,10 +16,18 @@ export const getStorage = async ({
   return axios.get(`${API_URL}/storage-data`, { params });
 };
 
-export const uploadFiles = async (filesData, fileType) => {
-  return axios.post(`${API_URL}/upload-files/${fileType}`, filesData);
-};
 
+export const uploadFiles = async (filesData, fileType, folder_id=null) => {
+  return axios.post(
+    `${API_URL}/upload-files/${fileType}`,
+    filesData,
+    {
+      params: {
+        folder_id: folder_id  // 若 folder_id 为 null/undefined，axios 会自动忽略该参数
+      }
+    }
+  );
+};
 
 export const deleteFiles = async (file_ids: number[] | string[]) => {
   return axios.delete(`${API_URL}/delete-files`, {
@@ -112,5 +120,6 @@ export const FilesType = Object.freeze({
   PREDICTED_VIDEO : 'predicted_video',
   AUDIO: 'audio',
   OTHER: 'other',
-  TRAINING_LOG: 'training_log'
+  TRAINING_LOG: 'training_log',
+  DATASETS:'datasets'
 });

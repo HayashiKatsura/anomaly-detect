@@ -9,7 +9,7 @@ import {
   nextTick,
   watch
 } from "vue";
-import { ElMessname, ElNotification } from "element-plus";
+import { ElMessage, ElNotification } from "element-plus";
 import axios from "axios";
 import { API_URL } from "@/url.js";
 import {
@@ -31,7 +31,8 @@ import {
   showValidations,
   startTraining,
   stopTraining,
-  getTrainingLog
+  getTrainingLog,
+  uploadFiles,
 } from "@/api/ultralytics.ts";
 
 defineOptions({
@@ -43,8 +44,6 @@ const settingLR: ContextProps = reactive({
   defaultPercent: 40,
   split: "vertical"
 });
-
-
 
 // 训练配置
 const trainParams = reactive({
@@ -131,7 +130,6 @@ watch(trainLogConsoleContent, async () => {
   scrollToBottom();
 });
 
-
 // 文件下载
 const downloadFiles = async (target = "example") => {
   console.log("seesion_id:", currentSessionId.value);
@@ -182,34 +180,8 @@ const downloadFiles = async (target = "example") => {
     });
   }
 };
-
-
-
-//挂载完成
 onMounted(async () => {
-  try {
-    loading.value = true;
-    const response = await getStorage({
-      page: 1,
-      page_image_size: 100
-    });
-    storageData.value = response.data.data.files;
-
-    // 数据集数据
-    datasetsList.value = storageData.value.filter(file =>
-      String(file.kind).includes("dataset")
-    );
-
-    trainParams.dataset_id = datasetsList.value[0].id; // 默认选择第一项
-
-    console.log("datasetsList", datasetsList.value);
-
-    // total.value = storageData.value.length
-  } catch (error) {
-    console.error("获取数据失败:", error);
-  } finally {
-    loading.value = false;
-  }
+  await handleGetStorage(pageNum.value, pageSize.value, FilesType.DATASETS);
 });
 
 // 启动训练
@@ -320,7 +292,8 @@ const handleGetTrainingLog = async () => {
           currentEpoch.value = newEpoch;
           console.log("currentEpoch", currentEpoch.value);
           currentTrainMetrics.value = newMetrics;
-          if (traingLogContent.data?.length == 1) { // TODO 有点不是很同步
+          if (traingLogContent.data?.length == 1) {
+            // TODO 有点不是很同步
             lastTrainMetrics.value = newMetrics;
           } else {
             lastTrainMetrics.value = traingLogContent.data.at(-2);
@@ -385,6 +358,24 @@ const stopPolling = () => {
   console.log("轮询已停止");
 };
 
+const handleGetStorage = async (page, page_size, file_type=FilesType.DATASETS) => {
+  try {
+    loading.value = true;
+    const response = await getStorage({
+      page: page,
+      page_size: page_size,
+      file_type: file_type
+    });
+    storageData.value = response.data.data.files;
+    datasetsList.value = storageData.value;
+    trainParams.dataset_id = datasetsList.value[0]?.id;
+  } catch (error) {
+    console.error("获取数据失败:", error);
+  } finally {
+    loading.value = false;
+  }
+};
+
 // 组件卸载时清理定时器
 onUnmounted(() => {
   stopPolling();
@@ -405,9 +396,117 @@ const formatTimeSimple = ms => {
     return `不到1分钟`;
   }
 };
+const pageSize = ref(30);
+const pageNum = ref(1);
+const fileUploadVisible = ref(false);
+const uploadFileList = ref([])
+const uploading = ref(false);
+const datasetFolderId = ref(null);
+
+const handleUpdateDatasets = folderId => {
+  console.log("datasetFolderId", folderId);
+  datasetFolderId.value = folderId;
+  console.log("handleUpdateDatasets-datasetFolderId", datasetFolderId.value);
+  fileUploadVisible.value = true;
+};
+const closeDialog = () => {
+  uploadFileList.value = [];
+  fileUploadVisible.value = false;
+};
+
+const onUploadFileListChange = () => {
+  console.log("uploadFileList change", uploadFileList.value);
+};
+
+// 文件上传
+const handleUploadFiles = async () => {
+  if (uploadFileList.value.length === 0) {
+    ElMessage.warning("请选择要上传的文件");
+    return;
+  }
+  uploading.value = true;
+  const filesFormData = new FormData();
+  uploadFileList.value.forEach(file => {
+    filesFormData.append("files", file.raw);
+  });
+  ElNotification.warning({
+    title: "正在上传...",
+    message: "",
+    showClose: false,
+    duration: 1000
+  });
+
+  console.log("uploadFiles-datasetFolderId", datasetFolderId.value);
+
+  try {
+    await uploadFiles(
+      filesFormData,
+      FilesType.DATASETS,
+      datasetFolderId.value
+    );
+  } catch (error) {
+    ElNotification.error({
+      title: "上传失败",
+      message: error.message,
+      showClose: false,
+      duration: 1000
+    });
+  } finally {
+    uploading.value = false;
+    uploadFileList.value = [];
+    fileUploadVisible.value = false;
+    datasetFolderId.value = null;
+    await handleGetStorage(
+      pageNum.value,
+      pageSize.value,
+      FilesType.DATASETS
+    );
+  }
+};
+
 </script>
 
 <template>
+  <!-- 文件上传 -->
+  <el-dialog
+    v-model="fileUploadVisible"
+    title="上传数据集"
+    width="30%"
+    @close="closeDialog"
+  >
+    <el-upload
+      v-model:file-list="uploadFileList"
+      :auto-upload="false"
+      :on-change="onUploadFileListChange"
+      accept=".zip, application/zip"
+      limit="1"
+      action="#"
+      class="upload-container"
+      drag
+    >
+      <el-icon class="el-icon--upload">
+        <upload-filled />
+      </el-icon>
+      <div class="el-upload__text">拖拽文件到此处或 <em>点击上传</em></div>
+      <template #tip>
+        <div class="el-upload__tip">总大小不超过100MB。</div>
+      </template>
+    </el-upload>
+
+    <template #footer>
+      <span class="dialog-footer">
+        <el-button @click="closeDialog">取消</el-button>
+        <el-button
+          :loading="uploading"
+          type="primary"
+          @click="handleUploadFiles"
+        >
+          上传
+        </el-button>
+      </span>
+    </template>
+  </el-dialog>
+
   <el-card shadow="never">
     <template #header>
       <div class="card-header">
@@ -639,20 +738,6 @@ const formatTimeSimple = ms => {
               </div>
             </template>
           </el-table-column>
-          <el-table-column align="center" label="训练集数量">
-            <template #default="scope">
-              <div v-if="scope.row?.remark">
-                {{ scope.row.remark.train_cases_count }}
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column align="center" label="训练集数量">
-            <template #default="scope">
-              <div v-if="scope.row?.remark">
-                {{ scope.row.remark.train_cases_count }}
-              </div>
-            </template>
-          </el-table-column>
           <el-table-column align="center" label="标注类别">
             <template #default="scope">
               <div v-if="scope.row?.remark">
@@ -701,7 +786,15 @@ const formatTimeSimple = ms => {
           </el-table-column>
           <el-table-column align="center" label="操作" prop="recall">
             <template #default="scope">
-              <div>补充数据</div>
+              <div>
+                <el-button
+                  type="text"
+                  class="rounded-lg transition-all duration-200 transform hover:scale-200"
+                  @click.stop="handleUpdateDatasets(scope.row.id)"
+                >
+                  补充数据
+                </el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>

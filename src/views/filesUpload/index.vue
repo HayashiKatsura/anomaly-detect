@@ -47,6 +47,9 @@ const fileUploadVisible = ref(false);
 const uploadMode = ref("random");
 const selectedFolderId = ref(null);
 
+const datasetFolderId = ref(null);
+const multipleFiles = ref(true);
+const uploadFilesLimit = ref(null);
 const fileTypeSelectVisible = ref(false);
 const fileTypeSelect = ref(null);
 const fileUploadTypeURL = ref(null);
@@ -113,8 +116,14 @@ const handleUploadFiles = async () => {
     duration: 1000
   });
 
+  console.log("uploadFiles-datasetFolderId", datasetFolderId.value);
+
   try {
-    await uploadFiles(filesFormData, fileUploadTypeURL.value);
+    await uploadFiles(
+      filesFormData,
+      fileUploadTypeURL.value,
+      datasetFolderId.value
+    );
   } catch (error) {
     ElNotification.error({
       title: "上传失败",
@@ -126,7 +135,14 @@ const handleUploadFiles = async () => {
     uploading.value = false;
     uploadFileList.value = [];
     fileUploadVisible.value = false;
-    handleGetStorage(pageNum.value, pageSize.value, fileShowTypeURL.value);
+    multipleFiles.value = true;
+    datasetFolderId.value = null;
+    uploadFilesLimit.value = null;
+    await handleGetStorage(
+      pageNum.value,
+      pageSize.value,
+      fileShowTypeURL.value
+    );
   }
 
   // 计算属性：语法高亮后的内容
@@ -143,6 +159,17 @@ const handleUploadFiles = async () => {
 };
 const onUploadFileListChange = () => {
   console.log("uploadFileList change", uploadFileList.value);
+};
+
+const handleUpdateDatasets = folderId => {
+  console.log("datasetFolderId", folderId);
+  fileUploadTypeURL.value = "datasets";
+  uploadAccept.value = ".zip, application/zip";
+  uploadFilesLimit.value = 1;
+  multipleFiles.value = false;
+  datasetFolderId.value = folderId;
+  console.log("handleUpdateDatasets-datasetFolderId", datasetFolderId.value);
+  fileUploadVisible.value = true;
 };
 
 const handleGetStorage = async (page, page_size, file_type) => {
@@ -191,7 +218,7 @@ const handleDelete = async filesObject => {
   try {
     let fileIds = [];
     if (!filesObject?.length) {
-      filesObject = [filesObject]
+      filesObject = [filesObject];
     }
     filesObject.forEach(async file => {
       fileIds.push(file.id);
@@ -256,6 +283,8 @@ const fileTypeSelectConfirm = fileType => {
   } else if (fileType.includes("dataset")) {
     uploadAccept.value = ".zip, application/zip";
     fileUploadTypeURL.value = "datasets";
+    uploadFilesLimit.value = 1;
+    multipleFiles.value = false;
   } else {
     uploadAccept.value = ".pt";
     fileUploadTypeURL.value = "weights";
@@ -266,9 +295,14 @@ watch(fileShowTypeURL, async newValue => {
   await handleGetStorage(pageNum.value, pageSize.value, newValue);
 });
 
-watch(pageSize, async newValue => {
-  await handleGetStorage(pageNum.value, newValue, fileShowTypeURL.value);
-});
+const handleSizeChange = async newPageSize => {
+  pageSize.value = newPageSize;
+  await handleGetStorage(pageNum.value, pageSize.value, fileShowTypeURL.value);
+};
+const handleCurrentChange = async newPageNum => {
+  pageNum.value = newPageNum;
+  await handleGetStorage(pageNum.value, pageSize.value, fileShowTypeURL.value);
+};
 
 watch(pageNum, async newValue => {
   await handleGetStorage(newValue, pageSize.value, fileShowTypeURL.value);
@@ -284,20 +318,28 @@ watch(pageNum, async newValue => {
           <el-button
             :icon="Upload"
             type="primary"
+            plain
+            class="rounded-lg transition-all duration-200 transform hover:scale-130"
             @click="fileTypeSelectVisible = true"
           >
             上传文件
           </el-button>
           <el-button
             :icon="Download"
+            :disabled="!selectList?.length"
             type="primary"
+            plain
+            class="rounded-lg transition-all duration-200 transform hover:scale-130"
             @click="handleDownloadFiles(selectList)"
           >
             下载文件
           </el-button>
           <el-button
             :icon="Delete"
+            :disabled="!selectList?.length"
             type="danger"
+            plain
+            class="rounded-lg transition-all duration-200 transform hover:scale-130"
             @click="handleDelete(selectList)"
           >
             删除文件
@@ -659,10 +701,11 @@ watch(pageNum, async newValue => {
             :auto-upload="false"
             :on-change="onUploadFileListChange"
             :accept="uploadAccept"
+            :limit="uploadFilesLimit"
             action="#"
             class="upload-container"
             drag
-            multiple
+            :multiple="multipleFiles"
           >
             <el-icon class="el-icon--upload">
               <upload-filled />
@@ -718,49 +761,58 @@ watch(pageNum, async newValue => {
                       align="center"
                       label="文件名称"
                       prop="original_filename"
-                      sortable
                     />
                     <el-table-column
                       align="center"
                       label="文件类型"
                       prop="kind"
-                      sortable
                     />
                     <el-table-column
                       align="center"
                       label="文件大小"
                       prop="size_bytes"
-                      sortable
                     />
                     <el-table-column
                       align="center"
                       label="上传时间"
                       prop="created_at"
-                      sortable
                     />
 
-                    <el-table-column align="center" label="操作">
+                    <el-table-column align="center" label="操作" width="100">
                       <template v-slot="scope">
-                        <el-button
-                          v-if="true"
-                          :icon="Download"
-                          type="default"
-                          @click.stop="handleDownloadFiles(scope.row)"
-                        />
+                        <div class="flex justify-evenly">
+                          <el-button
+                            :icon="Download"
+                            type="text"
+                            class="rounded-lg transition-all duration-200 transform hover:scale-200"
+                            @click.stop="handleDownloadFiles(scope.row)"
+                          />
+                          <el-button
+                            v-if="scope.row.kind.includes('dataset')"
+                            :icon="Upload"
+                            type="text"
+                            class="rounded-lg transition-all duration-200 transform hover:scale-200"
+                            @click.stop="handleUpdateDatasets(scope.row.id)"
+                          />
 
-                        <el-popconfirm
-                          confirm-button-text="删除"
-                          cancel-button-text="取消"
-                          :icon="Delete"
-                          icon-color="#626AEF"
-                          title="是否确认删除？"
-                          @confirm="handleDelete(scope.row)"
-                          @cancel="console.log('cancel!')"
-                        >
-                          <template #reference>
-                            <el-button :icon="Delete" />
-                          </template>
-                        </el-popconfirm>
+                          <el-popconfirm
+                            confirm-button-text="删除"
+                            cancel-button-text="取消"
+                            :icon="Delete"
+                            icon-color="#626AEF"
+                            title="是否确认删除？"
+                            @confirm="handleDelete(scope.row)"
+                            @cancel="console.log('cancel!')"
+                          >
+                            <template #reference>
+                              <el-button
+                                :icon="Delete"
+                                type="text"
+                                class="rounded-lg transition-all duration-200 transform hover:scale-200"
+                              />
+                            </template>
+                          </el-popconfirm>
+                        </div>
                       </template>
                     </el-table-column>
                   </el-table>
