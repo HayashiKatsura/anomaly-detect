@@ -7,19 +7,31 @@ export const getStorage = async ({
   file_type = null,
   file_id = null,
   page = 1,
-  page_size = 10
+  page_size = 10,
 } = {}) => {
   const params = { page, page_size };
+  if (file_type == 'all') file_type = null;
   if (file_type) params.file_type = file_type;
   if (file_id) params.file_id = file_id;
   return axios.get(`${API_URL}/storage-data`, { params });
 };
+
+export const uploadFiles = async (filesData, fileType) => {
+  return axios.post(`${API_URL}/upload-files/${fileType}`, filesData);
+};
+
 
 export const deleteFiles = async (file_ids: number[] | string[]) => {
   return axios.delete(`${API_URL}/delete-files`, {
     data: { file_ids }
   });
 };
+
+
+export const downloadFiles = async (file_id) => {
+  return axios.get(`${API_URL}/download-file/${file_id}`,{responseType: "blob"});
+};
+
 
 
 // 预测
